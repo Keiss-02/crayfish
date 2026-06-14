@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crayfish Water Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #06131a;
+      --bg2: #0c2230;
+      --surface: rgba(10, 27, 38, 0.88);
+      --surface-strong: #10293a;
+      --line: rgba(98, 218, 255, 0.16);
+      --text: #e7fbff;
+      --muted: #7aa5b8;
+      --accent: #55d6ff;
+      --accent2: #58f0c4;
+      --warn: #ffbf5e;
+      --bad: #ff6f8c;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'Space Grotesk', sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(85, 214, 255, 0.14), transparent 34%),
+        radial-gradient(circle at 80% 10%, rgba(88, 240, 196, 0.12), transparent 30%),
+        linear-gradient(160deg, var(--bg), var(--bg2));
+      overflow-x: hidden;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      inset: auto -10% -20% auto;
+      width: 42vw;
+      height: 42vw;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(85,214,255,0.14), transparent 65%);
+      filter: blur(18px);
+      animation: drift 16s ease-in-out infinite;
+      pointer-events: none;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent 85%);
+    }
+    .wrap {
+      position: relative;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+      min-height: 100vh;
+      animation: pageIn 0.7s ease both;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(8, 22, 31, 0.9), rgba(12, 34, 48, 0.76));
+      backdrop-filter: blur(12px);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .orb {
+      width: 46px;
+      height: 46px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: 0 0 40px rgba(85, 214, 255, 0.35);
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.04em;
+    }
+    .eyebrow {
+      margin: 3px 0 0;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .nav-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      text-decoration: none;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .nav-link:hover {
+      transform: translateY(-1px);
+      border-color: rgba(88, 240, 196, 0.42);
+      box-shadow: 0 0 18px rgba(88, 240, 196, 0.14);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent2);
+      box-shadow: 0 0 10px rgba(88, 240, 196, 0.8);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+      gap: 18px;
+      margin-top: 18px;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .hero, .panel {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
+    }
+    .hero {
+      padding: 22px;
+      min-height: 100%;
+    }
+    .panel {
+      padding: 18px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-self: start;
+      position: sticky;
+      top: 24px;
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .metric-ring {
+      display: grid;
+      place-items: center;
+      width: 180px;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at center, rgba(8, 24, 34, 0.8) 52%, transparent 53%),
+        conic-gradient(var(--accent2) 0deg, var(--accent) 140deg, rgba(255,255,255,0.06) 140deg 360deg);
+      box-shadow: inset 0 0 0 12px rgba(255,255,255,0.02);
+    }
+    .metric-ring span {
+      display: block;
+      text-align: center;
+      font-family: var(--mono);
+    }
+    .metric-ring .value {
+      font-size: 34px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+    }
+    .metric-ring .label {
+      margin-top: 6px;
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .hero-copy {
+      max-width: 520px;
+    }
+    .hero-copy h2 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      line-height: 1.02;
+    }
+    .hero-copy p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .stats {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    @media (max-width: 720px) {
+      .stats { grid-template-columns: 1fr; }
+    }
+    .stat {
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+    }
+    .stat .name {
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--muted);
+    }
+    .stat .value {
+      margin-top: 8px;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .stat .suffix {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      margin-left: 6px;
+    }
+    .panel > .card,
+    .hero > .card,
+    .hero > .stats,
+    .hero > .hero-top {
+      animation: rise 0.6s ease both;
+    }
+    .panel > .card:nth-child(1) { animation-delay: 0.05s; }
+    .panel > .card:nth-child(2) { animation-delay: 0.10s; }
+    .panel > .card:nth-child(3) { animation-delay: 0.15s; }
+    .panel > .card:nth-child(4) { animation-delay: 0.20s; }
+    .hero > .hero-top { animation-delay: 0.02s; }
+    .hero > .stats:nth-of-type(1) { animation-delay: 0.08s; }
+    .hero > .stats:nth-of-type(2) { animation-delay: 0.14s; }
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--muted);
+    }
+    .card {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.03);
+    }
+    .span-2 { grid-column: 1 / -1; }
+    .card.soft-glow {
+      position: relative;
+      overflow: hidden;
+    }
+    .card.soft-glow::before {
+      content: '';
+      position: absolute;
+      inset: -40% auto auto -10%;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(88,240,196,0.16), transparent 65%);
+      animation: pulseGlow 8s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 11px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .row:last-child { border-bottom: none; }
+    .label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .value {
+      font-family: var(--mono);
+      font-size: 13px;
+      text-align: right;
+      word-break: break-word;
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .actions button {
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(85, 214, 255, 0.12), rgba(88, 240, 196, 0.08));
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .actions button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 18px rgba(85, 214, 255, 0.16);
+    }
+    .actions button.danger {
+      border-color: rgba(255, 111, 140, 0.32);
+      background: linear-gradient(135deg, rgba(255, 111, 140, 0.12), rgba(255, 191, 94, 0.06));
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    @media (max-width: 720px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field label {
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+    .field input[type="number"],
+    .field input[type="text"] {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(4, 14, 21, 0.56);
+      color: var(--text);
+      padding: 11px 12px;
+      font-family: var(--mono);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    .field input[type="number"]:focus,
+    .field input[type="text"]:focus {
+      border-color: rgba(85, 214, 255, 0.55);
+      box-shadow: 0 0 0 3px rgba(85, 214, 255, 0.1);
+      transform: translateY(-1px);
+    }
+    .field.check {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.02);
+    }
+    .field.check label {
+      margin: 0;
+      color: var(--text);
+      text-transform: none;
+      font-size: 12px;
+      letter-spacing: normal;
+    }
+    .field.check input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent2);
+    }
+    .section-note {
+      margin-top: 8px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .primary-action {
+      border: 1px solid rgba(88, 240, 196, 0.42);
+      background: linear-gradient(135deg, rgba(85, 214, 255, 0.2), rgba(88, 240, 196, 0.18));
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .primary-action:hover {
+      transform: translateY(-1px);
+      border-color: rgba(88, 240, 196, 0.65);
+      box-shadow: 0 0 20px rgba(88, 240, 196, 0.18);
+    }
+    .secondary-action {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .secondary-action:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 18px rgba(85, 214, 255, 0.11);
+    }
+    .save-state {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .quick-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    @media (max-width: 720px) {
+      .quick-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .summary-chip {
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+      min-height: 94px;
+      display: flex;
+      flex-direction: column;
+    }
+    .summary-chip .chip-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+    .summary-chip .chip-value {
+      margin-top: 8px;
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.1;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .summary-chip .chip-sub {
+      margin-top: 4px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .log {
+      min-height: 120px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .footer {
+      margin-top: 18px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    @keyframes pageIn {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(18px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes drift {
+      0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+      50% { transform: translate3d(-3%, -2%, 0) scale(1.04); }
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.45; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="ambient"></div>
+    <div class="topbar">
+      <div class="brand">
+        <div class="orb"></div>
+        <div>
+          <h1>Crayfish Water Panel</h1>
+          <p class="eyebrow">shared dashboard · same server · dedicated route</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <a class="nav-link" href="/">Camera Dashboard</a>
+        <div class="pill"><span class="dot"></span><span id="connectionState">CONNECTING</span></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <section class="hero">
+        <div class="hero-top">
+          <div class="hero-copy">
+            <h2>Water telemetry and control.</h2>
+            <p>
+              This panel reads live water readings from the Python broker and updates the dashboard in place.
+            </p>
+          </div>
+        </div>
+
+        <div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+          <div class="stat">
+            <div class="name">Ammonia</div>
+            <div class="value" id="ammoniaValue">--<span class="suffix">raw</span></div>
+          </div>
+          <div class="stat">
+            <div class="name">Temperature</div>
+            <div class="value" id="temperatureValue">--<span class="suffix">°C</span></div>
+          </div>
+          <div class="stat">
+            <div class="name">Water Flow</div>
+            <div class="value" id="flowValue">--<span class="suffix">L/min</span></div>
+          </div>
+          <div class="stat">
+            <div class="name">Turbidity</div>
+            <div class="value" id="turbidityValue">--<span class="suffix">NTU</span></div>
+          </div>
+        </div>
+
+        <div class="quick-summary">
+          <div class="summary-chip">
+            <div class="chip-label">Connection</div>
+            <div class="chip-value" id="connectedValueInline">--</div>
+            <div class="chip-sub" id="serialPortInline">/dev/ttyUSB0</div>
+          </div>
+          <div class="summary-chip">
+            <div class="chip-label">Last command</div>
+            <div class="chip-value" style="font-size:16px;" id="lastCommandInline">--</div>
+            <div class="chip-sub" id="lastReplyInline">--</div>
+          </div>
+          <div class="summary-chip">
+            <div class="chip-label">Threshold profile</div>
+            <div class="chip-value" style="font-size:16px;" id="profileSummaryInline">ready</div>
+            <div class="chip-sub" id="configStateInline">syncing</div>
+          </div>
+          <div class="summary-chip">
+            <div class="chip-label">Updated</div>
+            <div class="chip-value" style="font-size:16px;" id="lastUpdateInline">--</div>
+            <div class="chip-sub">live data</div>
+          </div>
+        </div>
+
+        <div class="card soft-glow" style="margin-top:14px;">
+          <div class="section-title">
+            <span>Health / Notes</span>
+            <span id="lastUpdate">--</span>
+          </div>
+          <div class="log" id="noteValue">Waiting for the first water status update…</div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="card soft-glow span-2">
+          <div class="section-title">
+            <span>Status</span>
+            <span id="serialPort">/dev/ttyUSB0</span>
+          </div>
+          <div class="row"><span class="label">Serial link</span><span class="value" id="connectedValue">--</span></div>
+          <div class="row"><span class="label">Last command</span><span class="value" id="lastCommandValue">--</span></div>
+          <div class="row"><span class="label">Last reply</span><span class="value" id="lastReplyValue">--</span></div>
+        </div>
+
+        <div class="card span-2">
+          <div class="section-title">
+            <span>Controls</span>
+            <span>queue</span>
+          </div>
+          <div class="actions">
+            <button onclick="sendControl('refresh')">Refresh</button>
+            <button onclick="sendControl('pump_toggle')">Toggle Pump</button>
+            <button class="danger" onclick="sendControl('pump_off')">Pump Off</button>
+            <button onclick="sendControl('pump_on')">Pump On</button>
+          </div>
+        </div>
+
+        <div class="card soft-glow">
+          <div class="section-title">
+            <span>Sensors</span>
+            <span class="save-state" id="configState">syncing</span>
+          </div>
+          <div class="form-grid" style="margin-top:10px;">
+            <div class="field">
+              <label for="sampleIntervalSec">Sample interval (sec)</label>
+              <input id="sampleIntervalSec" type="number" min="1" max="3600" step="1">
+            </div>
+            <div class="field">
+              <label for="alertIntervalSec">Alert interval (sec)</label>
+              <input id="alertIntervalSec" type="number" min="1" max="3600" step="1">
+            </div>
+            <div class="field">
+              <label for="minLevelPct">Min level (%)</label>
+              <input id="minLevelPct" type="number" min="0" max="100" step="1">
+            </div>
+            <div class="field">
+              <label for="maxLevelPct">Max level (%)</label>
+              <input id="maxLevelPct" type="number" min="0" max="100" step="1">
+            </div>
+            <div class="field">
+              <label for="minTempC">Min temp (°C)</label>
+              <input id="minTempC" type="number" min="0" max="50" step="0.1">
+            </div>
+            <div class="field">
+              <label for="maxTempC">Max temp (°C)</label>
+              <input id="maxTempC" type="number" min="0" max="50" step="0.1">
+            </div>
+            <div class="field">
+              <label for="minPh">Min pH</label>
+              <input id="minPh" type="number" min="0" max="14" step="0.1">
+            </div>
+            <div class="field">
+              <label for="maxPh">Max pH</label>
+              <input id="maxPh" type="number" min="0" max="14" step="0.1">
+            </div>
+            <div class="field">
+              <label for="maxTurbidityNtu">Max turbidity (NTU)</label>
+              <input id="maxTurbidityNtu" type="number" min="0" max="2000" step="1">
+            </div>
+            <div class="field">
+              <label for="maxTdsPpm">Max TDS (ppm)</label>
+              <input id="maxTdsPpm" type="number" min="0" max="5000" step="1">
+            </div>
+          </div>
+        </div>
+
+        <div class="card soft-glow">
+          <div class="section-title">
+            <span>Actuators</span>
+            <span class="save-state">live tune</span>
+          </div>
+          <div class="form-grid" style="margin-top:10px;">
+            <div class="field check">
+              <label for="pumpAutoEnabled">Auto pump enabled</label>
+              <input id="pumpAutoEnabled" type="checkbox">
+            </div>
+            <div class="field check">
+              <label for="alarmEnabled">Alarm enabled</label>
+              <input id="alarmEnabled" type="checkbox">
+            </div>
+            <div class="field">
+              <label for="pumpTargetLevelPct">Pump target level (%)</label>
+              <input id="pumpTargetLevelPct" type="number" min="0" max="100" step="1">
+            </div>
+            <div class="field">
+              <label for="pumpMaxRuntimeSec">Pump max runtime (sec)</label>
+              <input id="pumpMaxRuntimeSec" type="number" min="1" max="3600" step="1">
+            </div>
+            <div class="field">
+              <label for="pumpCooldownSec">Pump cooldown (sec)</label>
+              <input id="pumpCooldownSec" type="number" min="0" max="3600" step="1">
+            </div>
+            <div class="field">
+              <label for="alarmHoldSec">Alert hold (sec)</label>
+              <input id="alarmHoldSec" type="number" min="1" max="3600" step="1">
+            </div>
+          </div>
+        </div>
+
+        <div class="card span-2">
+          <div class="section-title">
+            <span>Save / Reload</span>
+            <span class="save-state" id="configStateFooter">ready</span>
+          </div>
+          <div class="actions" style="margin-top:12px;grid-template-columns:repeat(2,minmax(0,1fr));">
+            <button class="primary-action" onclick="saveConfig()">Save Settings</button>
+            <button class="secondary-action" onclick="refreshConfig()">Reload</button>
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <span class="label">Current profile</span>
+            <span class="value" id="profileSummary">ready</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="footer">
+      <span>Route /water</span>
+      <span id="clock">--:--:--</span>
+    </div>
+  </div>
+
+  <script>
+    const connectionState = document.getElementById('connectionState');
+    const ammoniaValue = document.getElementById('ammoniaValue');
+    const temperatureValue = document.getElementById('temperatureValue');
+    const flowValue = document.getElementById('flowValue');
+    const turbidityValue = document.getElementById('turbidityValue');
+    const noteValue = document.getElementById('noteValue');
+    const lastUpdate = document.getElementById('lastUpdate');
+    const connectedValue = document.getElementById('connectedValue');
+    const serialPort = document.getElementById('serialPort');
+    const lastCommandValue = document.getElementById('lastCommandValue');
+    const lastReplyValue = document.getElementById('lastReplyValue');
+    const configState = document.getElementById('configState');
+    const configStateFooter = document.getElementById('configStateFooter');
+    const profileSummary = document.getElementById('profileSummary');
+    const connectedValueInline = document.getElementById('connectedValueInline');
+    const serialPortInline = document.getElementById('serialPortInline');
+    const lastCommandInline = document.getElementById('lastCommandInline');
+    const lastReplyInline = document.getElementById('lastReplyInline');
+    const profileSummaryInline = document.getElementById('profileSummaryInline');
+    const configStateInline = document.getElementById('configStateInline');
+    const lastUpdateInline = document.getElementById('lastUpdateInline');
+    const clock = document.getElementById('clock');
+
+    const configInputs = {
+      sample_interval_sec: document.getElementById('sampleIntervalSec'),
+      alert_interval_sec: document.getElementById('alertIntervalSec'),
+      min_level_pct: document.getElementById('minLevelPct'),
+      max_level_pct: document.getElementById('maxLevelPct'),
+      min_temp_c: document.getElementById('minTempC'),
+      max_temp_c: document.getElementById('maxTempC'),
+      min_ph: document.getElementById('minPh'),
+      max_ph: document.getElementById('maxPh'),
+      max_turbidity_ntu: document.getElementById('maxTurbidityNtu'),
+      max_tds_ppm: document.getElementById('maxTdsPpm'),
+      pump_auto_enabled: document.getElementById('pumpAutoEnabled'),
+      alarm_enabled: document.getElementById('alarmEnabled'),
+      pump_target_level_pct: document.getElementById('pumpTargetLevelPct'),
+      pump_max_runtime_sec: document.getElementById('pumpMaxRuntimeSec'),
+      pump_cooldown_sec: document.getElementById('pumpCooldownSec'),
+      alarm_hold_sec: document.getElementById('alarmHoldSec')
+    };
+
+    function fmt(value, suffix = '') {
+      if (value === null || value === undefined || value === '') return '--' + suffix;
+      return `${value}${suffix}`;
+    }
+
+    function fmtCommand(value) {
+      if (!value) return '--';
+      if (typeof value === 'string') return value;
+      const action = value.action || value.type || 'cmd';
+      const actionValue = value.value !== undefined && value.value !== null && value.value !== '' ? ` ${value.value}` : '';
+      return `${String(action).toUpperCase()}${actionValue}`.trim();
+    }
+
+    function numberValue(value, fallback = 0) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function applyConfigToForm(config) {
+      Object.entries(configInputs).forEach(([key, input]) => {
+        if (!input) return;
+        if (input.type === 'checkbox') {
+          input.checked = Boolean(config[key]);
+        } else if (config[key] !== undefined && config[key] !== null) {
+          input.value = config[key];
+        }
+      });
+      const summaryText = `${config.sample_interval_sec || '--'}s sample · ${config.alarm_enabled ? 'alarms on' : 'alarms off'}`;
+      profileSummary.textContent = summaryText;
+      profileSummaryInline.textContent = summaryText;
+    }
+
+    function collectConfigFromForm() {
+      return {
+        sample_interval_sec: Math.max(1, numberValue(configInputs.sample_interval_sec.value, 5)),
+        alert_interval_sec: Math.max(1, numberValue(configInputs.alert_interval_sec.value, 15)),
+        min_level_pct: numberValue(configInputs.min_level_pct.value, 30),
+        max_level_pct: numberValue(configInputs.max_level_pct.value, 95),
+        min_temp_c: numberValue(configInputs.min_temp_c.value, 22),
+        max_temp_c: numberValue(configInputs.max_temp_c.value, 28),
+        min_ph: numberValue(configInputs.min_ph.value, 6.5),
+        max_ph: numberValue(configInputs.max_ph.value, 8.5),
+        max_turbidity_ntu: numberValue(configInputs.max_turbidity_ntu.value, 10),
+        max_tds_ppm: numberValue(configInputs.max_tds_ppm.value, 600),
+        pump_auto_enabled: configInputs.pump_auto_enabled.checked,
+        alarm_enabled: configInputs.alarm_enabled.checked,
+        pump_target_level_pct: numberValue(configInputs.pump_target_level_pct.value, 55),
+        pump_max_runtime_sec: Math.max(1, numberValue(configInputs.pump_max_runtime_sec.value, 180)),
+        pump_cooldown_sec: Math.max(0, numberValue(configInputs.pump_cooldown_sec.value, 60)),
+        alarm_hold_sec: Math.max(1, numberValue(configInputs.alarm_hold_sec.value, 30))
+      };
+    }
+
+    async function sendControl(action) {
+      try {
+        await fetch('/api/water/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action })
+        });
+        await refreshStatus();
+      } catch (error) {
+        noteValue.textContent = `Control request failed: ${error.message}`;
+      }
+    }
+
+    async function saveConfig() {
+      configState.textContent = 'saving…';
+      try {
+        const payload = collectConfigFromForm();
+        const response = await fetch('/api/water/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const saved = await response.json();
+        if (!response.ok || saved.ok === false) {
+          throw new Error(saved.error || 'Unable to save');
+        }
+        configState.textContent = 'saved';
+        configStateFooter.textContent = 'saved';
+        applyConfigToForm(saved.config || payload);
+        setTimeout(() => {
+          if (configState.textContent === 'saved') configState.textContent = 'ready';
+          if (configStateFooter.textContent === 'saved') configStateFooter.textContent = 'ready';
+        }, 1800);
+      } catch (error) {
+        configState.textContent = 'save failed';
+        configStateFooter.textContent = 'save failed';
+        noteValue.textContent = `Config save failed: ${error.message}`;
+      }
+    }
+
+    async function refreshConfig() {
+      try {
+        const response = await fetch('/api/water/config');
+        const config = await response.json();
+        applyConfigToForm(config);
+        const stateText = config.alarm_enabled ? 'alarm on' : 'alarm off';
+        configState.textContent = stateText;
+        configStateFooter.textContent = stateText;
+      } catch (error) {
+        configState.textContent = 'config error';
+        configStateFooter.textContent = 'config error';
+      }
+    }
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch('/api/water/status', { cache: 'no-store' });
+        const status = await response.json();
+        const connected = Boolean(status.connected);
+
+        connectionState.textContent = connected ? 'ONLINE' : 'OFFLINE';
+        connectedValue.textContent = connected ? 'connected' : 'disconnected';
+        connectedValueInline.textContent = connected ? 'connected' : 'disconnected';
+        serialPort.textContent = status.serial_port || '/dev/ttyUSB0';
+        serialPortInline.textContent = status.serial_port || '/dev/ttyUSB0';
+        ammoniaValue.innerHTML = `${fmt(status.ammonia_raw)}<span class="suffix">raw</span>`;
+        temperatureValue.innerHTML = `${fmt(status.temperature_c)}<span class="suffix">°C</span>`;
+        flowValue.innerHTML = `${fmt(status.flow_lpm)}<span class="suffix">L/min</span>`;
+        turbidityValue.innerHTML = `${fmt(status.turbidity_ntu)}<span class="suffix">NTU</span>`;
+        noteValue.textContent = status.note || 'No note';
+        lastUpdate.textContent = status.last_update ? new Date(status.last_update * 1000 || status.last_update).toLocaleTimeString() : '--';
+        lastUpdateInline.textContent = lastUpdate.textContent;
+        lastCommandValue.textContent = fmtCommand(status.last_command);
+        lastCommandInline.textContent = fmtCommand(status.last_command);
+        lastReplyValue.textContent = fmt(status.last_reply);
+        lastReplyInline.textContent = fmt(status.last_reply);
+      } catch (error) {
+        connectionState.textContent = 'ERROR';
+        noteValue.textContent = `Unable to load water status: ${error.message}`;
+      }
+    }
+
+    function tickClock() {
+      clock.textContent = new Date().toLocaleTimeString();
+    }
+
+    refreshConfig();
+    refreshStatus();
+    tickClock();
+    setInterval(refreshStatus, 1500);
+    setInterval(tickClock, 1000);
+  </script>
+</body>
+</html>
