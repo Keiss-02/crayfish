@@ -27,7 +27,10 @@ except Exception as e:
     print(f"Motor not available ({e}) — running in camera-test mode.")
     MOTOR_AVAILABLE = False
 
-from picamera2 import Picamera2
+try:
+    from picamera2 import Picamera2
+except Exception:
+    Picamera2 = None
 
 load_dotenv()
 signal_file           = os.getenv("SHARED_FILE")
@@ -423,6 +426,9 @@ def is_crayfish_moving(frame_bgr):
 
 # ── Misc helpers ───────────────────────────────────────────────────────────────
 def open_picamera(max_attempts=6, retry_delay=3):
+    if Picamera2 is None:
+        print("Camera support not available — running without live video.")
+        return None
     for attempt in range(1, max_attempts + 1):
         try:
             return Picamera2()
@@ -531,8 +537,14 @@ def watch_tank():
     print("Starting camera…")
     picam2 = open_picamera()
     if picam2 is None:
-        water_monitor.stop()
-        print("Could not acquire camera. Run './start.sh' to release all devices, then retry.")
+        print("No camera available. Water monitoring will continue without video detection.")
+        try:
+            while True:
+                time.sleep(60)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            water_monitor.stop()
         return
 
     config = picam2.create_video_configuration(

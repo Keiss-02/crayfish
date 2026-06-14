@@ -1,6 +1,7 @@
 opencv-python
 gpiozero
 python-dotenv
+picamera2
 numpy
 requests
 ultralytics
