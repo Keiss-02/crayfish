@@ -741,6 +741,13 @@
   </div>
 
   <script>
+
+    let API_BASE = localStorage.getItem('tunnel_url') || '';
+function setTunnelUrl(url) {
+  API_BASE = url.trim().replace(/\/$/, '');
+  localStorage.setItem('tunnel_url', API_BASE);
+}
+
     const connectionState = document.getElementById('connectionState');
     const ammoniaValue = document.getElementById('ammoniaValue');
     const temperatureValue = document.getElementById('temperatureValue');
@@ -838,11 +845,13 @@
 
     async function sendControl(action) {
       try {
-        await fetch('/api/water/control', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action })
-        });
+        await fetch('${API_BASE}/api/water/control', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ action })
+});
+
+
         await refreshStatus();
       } catch (error) {
         noteValue.textContent = `Control request failed: ${error.message}`;
@@ -853,11 +862,12 @@
       configState.textContent = 'saving…';
       try {
         const payload = collectConfigFromForm();
-        const response = await fetch('/api/water/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        const response = await fetch('${API_BASE}/api/water/config', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload)
+});
+
         const saved = await response.json();
         if (!response.ok || saved.ok === false) {
           throw new Error(saved.error || 'Unable to save');
@@ -878,7 +888,8 @@
 
     async function refreshConfig() {
       try {
-        const response = await fetch('/api/water/config');
+        const response = await fetch('${API_BASE}/api/water/config');
+
         const config = await response.json();
         applyConfigToForm(config);
         const stateText = config.alarm_enabled ? 'alarm on' : 'alarm off';
@@ -892,7 +903,9 @@
 
     async function refreshStatus() {
       try {
-        const response = await fetch('/api/water/status', { cache: 'no-store' });
+        const response = await fetch('${API_BASE}/api/water/status', { 
+  cache: 'no-store' 
+});
         const status = await response.json();
         const connected = Boolean(status.connected);
 
