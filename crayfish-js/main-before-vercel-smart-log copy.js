@@ -104,8 +104,8 @@ async function saveReading(status, trigger) {
 
 async function checkAlerts(status) {
   const checks = [
-    { condition: status.ammonia_raw > 5000,  type: 'high_ammonia',   severity: 'critical', value: status.ammonia_raw,   threshold: 2500 },
-    { condition: status.ammonia_raw > 4500,  type: 'high_ammonia',   severity: 'warning',  value: status.ammonia_raw,   threshold: 2000 },
+    { condition: status.ammonia_raw > 2500,  type: 'high_ammonia',   severity: 'critical', value: status.ammonia_raw,   threshold: 2500 },
+    { condition: status.ammonia_raw > 2000,  type: 'high_ammonia',   severity: 'warning',  value: status.ammonia_raw,   threshold: 2000 },
     { condition: status.temperature_c > 30,  type: 'high_temp',      severity: 'critical', value: status.temperature_c, threshold: 30   },
     { condition: status.temperature_c > 28,  type: 'high_temp',      severity: 'warning',  value: status.temperature_c, threshold: 28   },
     { condition: status.turbidity_ntu > 2500,type: 'high_turbidity', severity: 'critical', value: status.turbidity_ntu, threshold: 2500 },
@@ -984,8 +984,8 @@ app.get('/', (req, res) => {
           <div class="card-body">
             <div class="stat-row"><span class="stat-label">Raw ADC value</span><span class="stat-value" id="s-ammonia-raw">--</span></div>
             <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value" id="s-ammonia-status">--</span></div>
-            <div class="stat-row"><span class="stat-label">Warning threshold</span><span class="stat-value" style="color:var(--muted)">5000</span></div>
-            <div class="stat-row"><span class="stat-label">Critical threshold</span><span class="stat-value" style="color:var(--muted)">5500</span></div>
+            <div class="stat-row"><span class="stat-label">Warning threshold</span><span class="stat-value" style="color:var(--muted)">2000</span></div>
+            <div class="stat-row"><span class="stat-label">Critical threshold</span><span class="stat-value" style="color:var(--muted)">2500</span></div>
             <div style="margin-top:14px;"><div class="chart-wrap"><canvas id="chartAmmonia2"></canvas></div></div>
           </div>
         </div>
@@ -1064,17 +1064,7 @@ app.get('/', (req, res) => {
             </div>
           </div>
 
-          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);margin-bottom:14px;">
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Override Control</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button onclick="sendControl('reset_override')" style="padding:8px 16px;border-radius:6px;border:1.5px solid rgba(229,62,90,0.4);background:rgba(229,62,90,0.07);color:var(--danger);font-size:12px;font-weight:700;cursor:pointer;">↺ Release All Overrides</button>
-              <button onclick="sendControl('reset_pump')"    style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Pump</button>
-              <button onclick="sendControl('reset_uv')"     style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ UV</button>
-              <button onclick="sendControl('reset_peltier')"style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Peltier</button>
-              <button onclick="sendControl('reset_valve')"  style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Valve</button>
-            </div>
-            <div style="font-size:11px;color:var(--muted);margin-top:8px;">⚠ When overridden, sensor automation is disabled for that actuator until released.</div>
-          </div>
+
           
           <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
             <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Command Status</div>
@@ -1490,7 +1480,7 @@ app.get('/', (req, res) => {
         else if (val>ok) { el.className='metric-badge warn'; el.textContent='⚡ '+warnTxt; }
         else              { el.className='metric-badge ok';   el.textContent='✓ '+okTxt; }
       }
-      setBadge('m-ammonia-badge',  nh3, 5000, 5000, 'CRITICAL', 'WARNING — High', 'Normal — LOW');
+      setBadge('m-ammonia-badge',  nh3, 2000, 2000, 'CRITICAL', 'WARNING — Moderate', 'Normal — LOW');
       setBadge('m-temp-badge',     tmp, 28,   28,   'TOO HOT',  'WARNING — Warm',     'Within range — '+parseFloat(tmp||0).toFixed(1)+'°C');
       setBadge('m-turbidity-badge',trb, 2000, 2000, 'CLOUDY',   'Slightly cloudy',    'Clear');
 
@@ -1502,7 +1492,7 @@ app.get('/', (req, res) => {
 
       // Sensors page
       document.getElementById('s-ammonia-raw').textContent    = nh3!==null?nh3+' raw':'-- (no data)';
-      document.getElementById('s-ammonia-status').textContent  = !esp32Connected?'ESP32 offline':nh3>5500?'CRITICAL':nh3>5000?'WARNING — High':'Normal — LOW';
+      document.getElementById('s-ammonia-status').textContent  = !esp32Connected?'ESP32 offline':nh3>2500?'CRITICAL':nh3>2000?'WARNING — Moderate':'Normal — LOW';
       document.getElementById('s-ammonia-status').style.color  = !esp32Connected?'var(--muted)':nh3>2500?'var(--danger)':nh3>2000?'var(--warn)':'var(--accent2)';
       document.getElementById('s-temp-val').textContent        = tmp!==null?parseFloat(tmp).toFixed(1)+' °C':'-- (no data)';
       document.getElementById('s-temp-status').textContent     = !esp32Connected?'ESP32 offline':tmp>30?'CRITICAL — Too hot':tmp>28?'WARNING — Warm':'Within range';

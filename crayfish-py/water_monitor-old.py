@@ -75,46 +75,17 @@ def handle_water_command(command, status):
         status["last_reply"] = "REFRESH"
         return status
 
-    # Map dashboard actions to ESP32 commands
-    action_to_cmd = {
-        "uv_on":    "UV_ON",
-        "uv_off":   "UV_OFF",
-        "valve_on": "VALVE_ON",
-        "valve_off":"VALVE_OFF",
-        "cool_max": "COOL_MAX",
-        "cool_off": "COOL_OFF",
-        "pump_on":  "PUMP_ON",
-        "pump_off": "PUMP_OFF",
-        "reset_override":  "RESET_OVERRIDE",
-        "reset_pump":      "RESET_PUMP",
-        "reset_uv":        "RESET_UV",
-        "reset_peltier":   "RESET_PELTIER",
-        "reset_valve":     "RESET_VALVE",
-    }
-
-    if action == "pump_toggle":
-        pump_state = str(status.get("pump_state") or "idle").lower()
-        action = "pump_on" if pump_state != "on" else "pump_off"
-
-    if action in action_to_cmd:
-        esp_cmd = action_to_cmd[action]
-        reply_ok = send_water_command(esp_cmd, None)
-
-        # Update local status optimistically
-        if action == "pump_on":    status["pump_state"]    = "on"
-        if action == "pump_off":   status["pump_state"]    = "off"
-        if action == "uv_on":      status["uv_state"]      = "on"
-        if action == "uv_off":     status["uv_state"]      = "off"
-        if action == "valve_on":   status["valve_state"]   = "open"
-        if action == "valve_off":  status["valve_state"]   = "closed"
-        if action == "cool_max":   status["peltier_state"] = "on"
-        if action == "cool_off":   status["peltier_state"] = "off"
-
+    if action in ("pump_on", "pump_off", "pump_toggle", "calibrate"):
+        if action == "pump_toggle":
+            pump_state = str(status.get("pump_state") or "idle").lower()
+            value = "ON" if pump_state != "on" else "OFF"
+            action = "pump"
+        reply_ok = send_water_command(action, value)
+        status["pump_state"] = str(value or action).lower() if action != "calibrate" else "calibrating"
         status["last_reply"] = "OK" if reply_ok else "FAILED"
-        status["note"] = f"Manual override: {esp_cmd}"
+        status["note"] = f"Processed water command: {action}"
         return status
 
-    # Fallback — send raw
     reply_ok = send_water_command(action, value)
     status["last_reply"] = "OK" if reply_ok else "FAILED"
     status["note"] = f"Processed water command: {action}"

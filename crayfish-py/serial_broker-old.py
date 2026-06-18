@@ -304,28 +304,34 @@ def send_esp32_move(steps=None, direction=None):
 
 
 def send_water_command(action, value=None):
-    # If already a raw ESP32 command string, send directly
-    raw_commands = {
-        "UV_ON", "UV_OFF", "VALVE_ON", "VALVE_OFF",
-        "COOL_MAX", "COOL_OFF", "PUMP_ON", "PUMP_OFF",
-        "RESET_OVERRIDE", "RESET_PUMP", "RESET_UV",
-        "RESET_PELTIER", "RESET_VALVE"
-    }
-
-    action_str = str(action or "").strip()
-
-    if action_str.upper() in raw_commands:
-        return send_raw_command(action_str.upper(), expect_reply_lines=2, label="WATER")
-
-    action_normalized = action_str.lower()
+    action_normalized = str(action or "refresh").strip().lower()
     value_text = str(value).strip().upper() if value is not None else ""
+
+    command_map = {
+        "uv_on": "UV_ON",
+        "uv_off": "UV_OFF",
+        "valve_on": "VALVE_ON",
+        "valve_off": "VALVE_OFF",
+        "cool_max": "COOL_MAX",
+        "cool_off": "COOL_OFF",
+        "pump_on": "PUMP_ON",
+        "pump_off": "PUMP_OFF",
+    }
 
     if action_normalized in ("refresh", "status", "read"):
         return True
 
     if action_normalized == "pump":
-        command = "PUMP_ON" if value_text == "ON" else "PUMP_OFF"
+        if value_text == "ON":
+            command = "PUMP_ON"
+        elif value_text == "OFF":
+            command = "PUMP_OFF"
+        else:
+            command = "PUMP_ON"
+    elif action_normalized in command_map:
+        command = command_map[action_normalized]
     else:
-        command = f"{action_str.upper()} {value_text}".strip()
+        action_token = str(action or "").strip().upper()
+        command = f"{action_token} {value_text}".strip() if value_text else action_token
 
     return send_raw_command(command, expect_reply_lines=2, label="WATER")
