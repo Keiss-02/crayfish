@@ -84,7 +84,6 @@ async function saveReading(status, trigger) {
       trigger:        trigger
     });
 
-    // Update last saved snapshot
     lastSaved = {
       ammonia_raw:   status.ammonia_raw,
       temperature_c: status.temperature_c,
@@ -126,13 +125,13 @@ async function checkAlerts(status) {
       } catch (e) {
         console.error('[MongoDB] Alert save error:', e.message);
       }
-      break; // only log highest severity per check cycle
+      break;
     }
   }
 }
 
 function hasSignificantChange(status) {
-  if (lastSaved.ammonia_raw === null) return false; // first reading, skip
+  if (lastSaved.ammonia_raw === null) return false;
 
   const ammoniaChanged   = Math.abs((status.ammonia_raw   || 0) - (lastSaved.ammonia_raw   || 0)) >= 100;
   const tempChanged      = Math.abs((status.temperature_c || 0) - (lastSaved.temperature_c || 0)) >= 0.5;
@@ -154,18 +153,14 @@ function hasActuatorChange(status) {
 }
 
 async function logWaterReading(status) {
-  //if (!status.connected) return;
-
   const now = Date.now() / 1000;
 
-  // First reading ever — save immediately as baseline
   if (lastSaved.ammonia_raw === null) {
     await saveReading(status, 'interval');
     lastLoggedTs = now;
     return;
   }
 
-  // Actuator state changed — save immediately
   if (hasActuatorChange(status)) {
     await saveReading(status, 'actuator_change');
     lastLoggedTs = now;
@@ -173,7 +168,6 @@ async function logWaterReading(status) {
     return;
   }
 
-  // Significant sensor value change — save immediately
   if (hasSignificantChange(status)) {
     await saveReading(status, 'value_change');
     lastLoggedTs = now;
@@ -181,7 +175,6 @@ async function logWaterReading(status) {
     return;
   }
 
-  // Forced interval save (every 20 seconds)
   if ((now - lastLoggedTs) > 20) {
     await saveReading(status, 'interval');
     lastLoggedTs = now;
@@ -189,9 +182,10 @@ async function logWaterReading(status) {
   }
 }
 
-// ── In-memory detection toggle ────────────────────────────────────────────────
+// ── In-memory state ───────────────────────────────────────────────────────────
 let detectionPaused = false;
-let lastLoggedTs = 0;
+let autoMode        = true;   // true = ESP32 sensors control actuators; false = manual
+let lastLoggedTs    = 0;
 
 function initConfig() {
     if (!fs.existsSync(configFile)) {
@@ -300,13 +294,34 @@ app.get('/api/water/status', (req, res) => {
     ts: Date.now() / 1000
   };
   const status = readJsonFile(waterStatusFile, fallback);
+  status.auto_mode = autoMode;   // always inject current mode
 
-logWaterReading(status);
+  logWaterReading(status);
 
   res.json(status);
 });
 
-// ── NEW: History endpoint ─────────────────────────────────────────────────────
+// ── Mode endpoints ────────────────────────────────────────────────────────────
+app.get('/api/water/mode', (req, res) => {
+  res.json({ ok: true, auto_mode: autoMode });
+});
+
+app.post('/api/water/mode', (req, res) => {
+  if (typeof req.body.auto_mode === 'boolean') {
+    autoMode = req.body.auto_mode;
+    console.log(`[MODE] Switched to ${autoMode ? 'AUTOMATED' : 'MANUAL'}`);
+
+    // When restoring auto mode, release all ESP32 overrides immediately
+    if (autoMode) {
+      const command = { action: 'reset_override', value: null, source: 'mode_switch', ts: Date.now() };
+      writeJsonFile(waterCommandFile, command);
+      console.log('[MODE] Sent RESET_OVERRIDE to ESP32');
+    }
+  }
+  res.json({ ok: true, auto_mode: autoMode });
+});
+
+// ── History endpoint ──────────────────────────────────────────────────────────
 app.get('/api/water/history', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
@@ -360,11 +375,20 @@ app.post('/api/water/config', (req, res) => {
 
 app.post('/api/water/control', (req, res) => {
   const action = (req.body && req.body.action ? String(req.body.action) : 'refresh').trim().toLowerCase();
-  const value = req.body && req.body.value !== undefined ? req.body.value : null;
+  const value  = req.body && req.body.value !== undefined ? req.body.value : null;
+
+  // Safety guard on the server: block non-reset actuator commands when in auto mode
+  const isResetCmd = action.startsWith('reset');
+  if (autoMode && !isResetCmd) {
+    console.warn(`[CONTROL] Blocked '${action}' — system is in AUTOMATED mode`);
+    return res.status(403).json({ ok: false, error: 'System is in Automated mode. Switch to Manual first.' });
+  }
+
   const command = { action, value, source: 'dashboard', ts: Date.now() };
   if (!writeJsonFile(waterCommandFile, command)) {
     return res.status(500).json({ ok: false, error: 'Failed to queue water command' });
   }
+  console.log(`[CONTROL] Queued: ${action}`);
   res.json({ ok: true, queued: command });
 });
 
@@ -492,6 +516,23 @@ app.get('/', (req, res) => {
     .conn-dot.unknown { background: var(--muted); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     .conn-dot.online { animation: pulse 2.5s ease-in-out infinite; }
+
+    /* ── Mode pill in topbar ── */
+    .mode-pill {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 14px; border-radius: 999px;
+      border: 1.5px solid rgba(0,179,126,0.4);
+      background: rgba(0,179,126,0.07);
+      font-size: 12px; font-weight: 600; color: var(--accent2);
+      cursor: pointer; transition: all 0.2s; user-select: none;
+    }
+    .mode-pill:hover { background: rgba(0,179,126,0.14); }
+    .mode-pill.manual {
+      border-color: rgba(245,158,11,0.45);
+      background: rgba(245,158,11,0.08);
+      color: var(--warn);
+    }
+    .mode-pill.manual:hover { background: rgba(245,158,11,0.16); }
 
     /* ── App shell ── */
     .app-shell { flex: 1; display: flex; overflow: hidden; }
@@ -670,14 +711,64 @@ app.get('/', (req, res) => {
     .stat-label { color: var(--text2); font-size: 12px; }
     .stat-value { font-family: var(--mono); font-size: 13px; color: var(--navy); font-weight: 600; }
 
+    /* ── Mode banner ── */
+    .mode-banner {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px; border-radius: 12px; border: 1.5px solid;
+      transition: all 0.3s;
+    }
+    .mode-banner.auto {
+      background: rgba(0,179,126,0.06);
+      border-color: rgba(0,179,126,0.35);
+    }
+    .mode-banner.manual {
+      background: rgba(245,158,11,0.07);
+      border-color: rgba(245,158,11,0.4);
+    }
+    .mode-banner-left { display: flex; align-items: center; gap: 14px; }
+    .mode-banner-icon { font-size: 28px; line-height: 1; }
+    .mode-banner-title { font-size: 15px; font-weight: 700; color: var(--navy); }
+    .mode-banner-desc  { font-size: 11px; color: var(--muted); margin-top: 3px; max-width: 480px; }
+    .mode-switch-btn {
+      padding: 10px 22px; border-radius: 8px; border: 1.5px solid;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      letter-spacing: 0.04em; transition: all 0.15s; white-space: nowrap;
+    }
+    .mode-switch-btn.to-manual {
+      border-color: rgba(245,158,11,0.45);
+      background: rgba(245,158,11,0.07);
+      color: var(--warn);
+    }
+    .mode-switch-btn.to-manual:hover { background: rgba(245,158,11,0.15); border-color: var(--warn); }
+    .mode-switch-btn.to-auto {
+      border-color: rgba(0,179,126,0.45);
+      background: rgba(0,179,126,0.07);
+      color: var(--accent2);
+    }
+    .mode-switch-btn.to-auto:hover { background: rgba(0,179,126,0.15); border-color: var(--accent2); }
+
     /* ── Actuator cards ── */
     .actuator-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .actuator-card {
       background: var(--surface2); border: 1px solid var(--border);
       border-radius: 10px; padding: 16px;
-      transition: box-shadow 0.15s;
+      transition: box-shadow 0.15s, opacity 0.25s;
+      position: relative;
     }
     .actuator-card:hover { box-shadow: var(--shadow); }
+
+    /* Lock overlay badge when in auto mode */
+    .actuator-grid.locked .actuator-card { opacity: 0.62; }
+    .actuator-grid.locked .actuator-card::after {
+      content: '🔒 AUTO';
+      position: absolute; top: 8px; right: 10px;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+      color: var(--accent2);
+      background: rgba(0,179,126,0.1);
+      border: 1px solid rgba(0,179,126,0.3);
+      border-radius: 999px; padding: 2px 8px;
+    }
+
     .actuator-icon { font-size: 22px; margin-bottom: 6px; }
     .actuator-name { font-size: 13px; font-weight: 600; color: var(--navy); margin-bottom: 4px; }
     .actuator-state { font-size: 11px; font-weight: 600; margin-bottom: 12px; }
@@ -692,6 +783,9 @@ app.get('/', (req, res) => {
     .btn-on:hover  { background: rgba(0,179,126,0.15); border-color: var(--accent2); }
     .btn-off { border-color: rgba(229,62,90,0.35); background: rgba(229,62,90,0.06); color: var(--danger); }
     .btn-off:hover { background: rgba(229,62,90,0.13); border-color: var(--danger); }
+    .btn-on:disabled, .btn-off:disabled {
+      opacity: 0.35; cursor: not-allowed; pointer-events: none;
+    }
 
     /* ── Charts ── */
     .chart-wrap { position: relative; height: 150px; }
@@ -829,6 +923,11 @@ app.get('/', (req, res) => {
     </div>
   </div>
   <div class="topbar-right">
+    <!-- Mode quick-pill -->
+    <div class="mode-pill" id="topbarModePill" onclick="showSection('actuators')" title="Click to manage mode">
+      <span id="topbarModeIcon">🤖</span>
+      <span id="topbarModeLabel">Auto</span>
+    </div>
     <div class="conn-pill">
       <div class="conn-dot unknown" id="esp32Dot"></div>
       <span>ESP32</span>
@@ -867,12 +966,10 @@ app.get('/', (req, res) => {
     <!-- ══ LIVE FEED ══ -->
     <div class="page-section active" id="section-livefeed">
 
-      <!-- No-connection banner -->
       <div class="no-conn-banner" id="noConnBanner">
         ⚠️ ESP32 not connected — sensor readings unavailable. Check serial connection on Pi.
       </div>
 
-      <!-- Metrics -->
       <div class="metric-row">
         <div class="metric-card c-blue">
           <div class="metric-label">🧪 Ammonia (MQ-137)</div>
@@ -896,10 +993,8 @@ app.get('/', (req, res) => {
         </div>
       </div>
 
-      <!-- Two col -->
       <div class="two-col">
 
-        <!-- Left -->
         <div class="col-stack">
           <div class="card">
             <div class="card-header">
@@ -930,7 +1025,6 @@ app.get('/', (req, res) => {
             </div>
           </div>
 
-          <!-- Snapshot -->
           <div class="card">
             <div class="card-header">
               <div class="card-header-left">📸 LAST MOTION SNAPSHOT</div>
@@ -946,7 +1040,6 @@ app.get('/', (req, res) => {
           </div>
         </div>
 
-        <!-- Right -->
         <div class="col-stack">
           <div class="card">
             <div class="card-header">📈 SENSOR TRENDS · LAST 20 READINGS</div>
@@ -1022,17 +1115,39 @@ app.get('/', (req, res) => {
 
     <!-- ══ ACTUATORS ══ -->
     <div class="page-section" id="section-actuators">
+
+      <!-- ── Mode banner ── -->
+      <div class="mode-banner auto" id="modeBanner">
+        <div class="mode-banner-left">
+          <div class="mode-banner-icon" id="modeBannerIcon">🤖</div>
+          <div>
+            <div class="mode-banner-title" id="modeBannerTitle">Automated Mode</div>
+            <div class="mode-banner-desc" id="modeBannerDesc">
+              Actuators are fully controlled by ESP32 sensor readings.
+              Manual buttons are locked — switch to Manual to override.
+            </div>
+          </div>
+        </div>
+        <button class="mode-switch-btn to-manual" id="modeSwitchBtn" onclick="toggleMode()">
+          ⚡ Switch to Manual
+        </button>
+      </div>
+
       <div class="card">
-        <div class="card-header">⚙️ ACTUATOR CONTROL PANEL</div>
+        <div class="card-header">
+          <span>⚙️ ACTUATOR CONTROL PANEL</span>
+          <span id="modeBadgeHeader" style="font-size:10px;padding:3px 10px;border-radius:999px;background:rgba(0,179,126,0.1);color:var(--accent2);border:1px solid rgba(0,179,126,0.3);letter-spacing:0.06em;">🤖 AUTOMATED</span>
+        </div>
         <div class="card-body">
-          <div class="actuator-grid">
+
+          <div class="actuator-grid locked" id="actuatorGrid">
             <div class="actuator-card">
               <div class="actuator-icon">☀️</div>
               <div class="actuator-name">UV Sterilizer</div>
               <div class="actuator-state off" id="act-uv-state">● Offline / OFF</div>
               <div class="actuator-btns">
-                <button class="btn-on"  onclick="sendControl('UV_ON')">ON</button>
-                <button class="btn-off" onclick="sendControl('UV_OFF')">OFF</button>
+                <button class="btn-on  manual-btn" disabled onclick="sendControl('UV_ON')">ON</button>
+                <button class="btn-off manual-btn" disabled onclick="sendControl('UV_OFF')">OFF</button>
               </div>
             </div>
             <div class="actuator-card">
@@ -1040,8 +1155,8 @@ app.get('/', (req, res) => {
               <div class="actuator-name">Water Pump</div>
               <div class="actuator-state off" id="act-pump-state">● Offline / OFF</div>
               <div class="actuator-btns">
-                <button class="btn-on"  onclick="sendControl('PUMP_ON')">ON</button>
-                <button class="btn-off" onclick="sendControl('PUMP_OFF')">OFF</button>
+                <button class="btn-on  manual-btn" disabled onclick="sendControl('PUMP_ON')">ON</button>
+                <button class="btn-off manual-btn" disabled onclick="sendControl('PUMP_OFF')">OFF</button>
               </div>
             </div>
             <div class="actuator-card">
@@ -1049,8 +1164,8 @@ app.get('/', (req, res) => {
               <div class="actuator-name">Solenoid Valve</div>
               <div class="actuator-state off" id="act-valve-state">● Offline / CLOSED</div>
               <div class="actuator-btns">
-                <button class="btn-on"  onclick="sendControl('VALVE_ON')">OPEN</button>
-                <button class="btn-off" onclick="sendControl('VALVE_OFF')">CLOSE</button>
+                <button class="btn-on  manual-btn" disabled onclick="sendControl('VALVE_ON')">OPEN</button>
+                <button class="btn-off manual-btn" disabled onclick="sendControl('VALVE_OFF')">CLOSE</button>
               </div>
             </div>
             <div class="actuator-card">
@@ -1058,26 +1173,30 @@ app.get('/', (req, res) => {
               <div class="actuator-name">Peltier Cooler</div>
               <div class="actuator-state off" id="act-peltier-state">● Offline / OFF</div>
               <div class="actuator-btns">
-                <button class="btn-on"  onclick="sendControl('COOL_MAX')">ON MAX</button>
-                <button class="btn-off" onclick="sendControl('COOL_OFF')">OFF</button>
+                <button class="btn-on  manual-btn" disabled onclick="sendControl('COOL_MAX')">ON MAX</button>
+                <button class="btn-off manual-btn" disabled onclick="sendControl('COOL_OFF')">OFF</button>
               </div>
             </div>
           </div>
 
+          <!-- Override controls — always available in Manual mode; resets available in both -->
           <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);margin-bottom:14px;">
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Override Control</div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Override Release</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button onclick="sendControl('reset_override')" style="padding:8px 16px;border-radius:6px;border:1.5px solid rgba(229,62,90,0.4);background:rgba(229,62,90,0.07);color:var(--danger);font-size:12px;font-weight:700;cursor:pointer;">↺ Release All Overrides</button>
-              <button onclick="sendControl('reset_pump')"    style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Pump</button>
-              <button onclick="sendControl('reset_uv')"     style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ UV</button>
-              <button onclick="sendControl('reset_peltier')"style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Peltier</button>
-              <button onclick="sendControl('reset_valve')"  style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Valve</button>
+              <button onclick="sendControl('reset_pump')"     style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Pump</button>
+              <button onclick="sendControl('reset_uv')"       style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ UV</button>
+              <button onclick="sendControl('reset_peltier')"  style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Peltier</button>
+              <button onclick="sendControl('reset_valve')"    style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Valve</button>
             </div>
-            <div style="font-size:11px;color:var(--muted);margin-top:8px;">⚠ When overridden, sensor automation is disabled for that actuator until released.</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:8px;">
+              ⚠ Release buttons are always available. In Automated mode, sensors immediately resume control after release.
+            </div>
           </div>
-          
+
           <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
             <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Command Status</div>
+            <div class="stat-row"><span class="stat-label">Active mode</span><span class="stat-value" id="act-mode-display" style="color:var(--accent2)">Automated</span></div>
             <div class="stat-row"><span class="stat-label">Last command</span><span class="stat-value" id="act-last-cmd">—</span></div>
             <div class="stat-row"><span class="stat-label">Reply</span><span class="stat-value" id="act-last-reply">—</span></div>
             <div class="stat-row"><span class="stat-label">Serial port</span><span class="stat-value" id="act-serial" style="color:var(--muted)">—</span></div>
@@ -1205,7 +1324,10 @@ app.get('/', (req, res) => {
   });
 
   // ── Nav ───────────────────────────────────────────────────────────────────
-  const pageTitles = { livefeed:'Live Feed', sensors:'Water Sensors', actuators:'Actuators', schedule:'Feeding Schedule', motorzones:'Motor Zones', alerts:'Alerts', eventlog:'Event Log' };
+  const pageTitles = {
+    livefeed:'Live Feed', sensors:'Water Sensors', actuators:'Actuators',
+    schedule:'Feeding Schedule', motorzones:'Motor Zones', alerts:'Alerts', eventlog:'Event Log'
+  };
   function showSection(id) {
     document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1461,28 +1583,28 @@ app.get('/', (req, res) => {
       const s=await res.json();
 
       esp32Connected=!!s.connected;
+
+      // Sync mode state if server reports it
+      if (typeof s.auto_mode === 'boolean') applyModeUI(s.auto_mode);
+
       const dot=document.getElementById('esp32Dot');
       const stEl=document.getElementById('esp32State');
       dot.className='conn-dot '+(esp32Connected?'online':'offline');
       stEl.textContent=esp32Connected?'Online':'Offline';
       stEl.style.color=esp32Connected?'var(--accent2)':'var(--danger)';
 
-      // No-connection banners
       const b1=document.getElementById('noConnBanner');
       const b2=document.getElementById('noConnBanner2');
       if(b1) b1.className='no-conn-banner'+(esp32Connected?'':' visible');
       if(b2) b2.className='no-conn-banner'+(esp32Connected?'':' visible');
 
       const nh3=s.ammonia_raw, tmp=s.temperature_c, trb=s.turbidity_ntu, flw=s.flow_lpm;
-      const hasData=esp32Connected&&nh3!==null&&tmp!==null;
 
-      // Metric values
       document.getElementById('m-ammonia').textContent   = nh3!==null?nh3:'--';
       document.getElementById('m-temp').textContent      = tmp!==null?parseFloat(tmp).toFixed(1):'--';
       document.getElementById('m-turbidity').textContent = trb!==null?trb:'--';
       document.getElementById('m-flow').textContent      = flw!==null?parseFloat(flw).toFixed(2):'--';
 
-      // Badges
       function setBadge(id, val, ok, warn, badTxt, warnTxt, okTxt, noDataTxt='— No data') {
         const el=document.getElementById(id);
         if (val===null||val===undefined||!esp32Connected) { el.className='metric-badge off'; el.textContent=noDataTxt; return; }
@@ -1500,7 +1622,6 @@ app.get('/', (req, res) => {
       else if (flw>0) { flwEl.className='metric-badge ok'; flwEl.textContent='✓ Flowing'; }
       else { flwEl.className='metric-badge warn'; flwEl.textContent='⚡ No flow'; }
 
-      // Sensors page
       document.getElementById('s-ammonia-raw').textContent    = nh3!==null?nh3+' raw':'-- (no data)';
       document.getElementById('s-ammonia-status').textContent  = !esp32Connected?'ESP32 offline':nh3>5500?'CRITICAL':nh3>5000?'WARNING — High':'Normal — LOW';
       document.getElementById('s-ammonia-status').style.color  = !esp32Connected?'var(--muted)':nh3>2500?'var(--danger)':nh3>2000?'var(--warn)':'var(--accent2)';
@@ -1516,7 +1637,6 @@ app.get('/', (req, res) => {
       document.getElementById('s-total-val').textContent       = s.total_liters!==null?(parseFloat(s.total_liters||0).toFixed(3)+' L'):'--';
       document.getElementById('s-valve-state').textContent     = !esp32Connected?'Offline':(s.valve_state||'--');
 
-      // Actuators
       const pumpOn=(s.pump_state||'').toUpperCase()==='ON';
       const uvOn=(s.uv_state||'').toUpperCase()==='ON';
       const valveOn=(s.valve_state||'').toUpperCase()==='OPEN';
@@ -1647,6 +1767,135 @@ app.get('/', (req, res) => {
     try { const res=await fetch(\`\${API_BASE}/api/detection/status\`); const data=await res.json(); syncDetectionUI(!!data.paused); } catch(_) {}
   }
 
+  // ── MODE MANAGEMENT ───────────────────────────────────────────────────────
+  let currentAutoMode = true;
+
+  function applyModeUI(isAuto) {
+    if (currentAutoMode === isAuto) return; // no-op if unchanged
+    currentAutoMode = isAuto;
+
+    const banner    = document.getElementById('modeBanner');
+    const icon      = document.getElementById('modeBannerIcon');
+    const title     = document.getElementById('modeBannerTitle');
+    const desc      = document.getElementById('modeBannerDesc');
+    const btn       = document.getElementById('modeSwitchBtn');
+    const badge     = document.getElementById('modeBadgeHeader');
+    const grid      = document.getElementById('actuatorGrid');
+    const modeDisp  = document.getElementById('act-mode-display');
+    const topPill   = document.getElementById('topbarModePill');
+    const topIcon   = document.getElementById('topbarModeIcon');
+    const topLabel  = document.getElementById('topbarModeLabel');
+
+    if (isAuto) {
+      banner.className = 'mode-banner auto';
+      icon.textContent  = '🤖';
+      title.textContent = 'Automated Mode';
+      desc.textContent  = 'Actuators are fully controlled by ESP32 sensor readings. Manual buttons are locked — switch to Manual to override.';
+      btn.className     = 'mode-switch-btn to-manual';
+      btn.textContent   = '⚡ Switch to Manual';
+      badge.style.background  = 'rgba(0,179,126,0.1)';
+      badge.style.color       = 'var(--accent2)';
+      badge.style.borderColor = 'rgba(0,179,126,0.3)';
+      badge.textContent       = '🤖 AUTOMATED';
+      grid.classList.add('locked');
+      if (modeDisp) { modeDisp.textContent = 'Automated'; modeDisp.style.color = 'var(--accent2)'; }
+      topPill.className  = 'mode-pill';
+      topIcon.textContent  = '🤖';
+      topLabel.textContent = 'Auto';
+    } else {
+      banner.className = 'mode-banner manual';
+      icon.textContent  = '🕹️';
+      title.textContent = 'Manual Mode';
+      desc.textContent  = 'You have full control over all actuators. ESP32 sensor-driven automation is suspended for overridden devices.';
+      btn.className     = 'mode-switch-btn to-auto';
+      btn.textContent   = '🤖 Restore Automation';
+      badge.style.background  = 'rgba(245,158,11,0.1)';
+      badge.style.color       = 'var(--warn)';
+      badge.style.borderColor = 'rgba(245,158,11,0.35)';
+      badge.textContent       = '🕹️ MANUAL';
+      grid.classList.remove('locked');
+      if (modeDisp) { modeDisp.textContent = 'Manual Override'; modeDisp.style.color = 'var(--warn)'; }
+      topPill.className  = 'mode-pill manual';
+      topIcon.textContent  = '🕹️';
+      topLabel.textContent = 'Manual';
+    }
+
+    // Enable / disable manual-btn elements
+    document.querySelectorAll('.manual-btn').forEach(btn => {
+      btn.disabled = isAuto;
+    });
+  }
+
+  async function toggleMode() {
+    const btn = document.getElementById('modeSwitchBtn');
+    btn.disabled = true;
+    try {
+      const res  = await fetch(\`\${API_BASE}/api/water/mode\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_mode: !currentAutoMode })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Force re-apply even if same value
+        const prev = currentAutoMode;
+        currentAutoMode = !data.auto_mode; // flip so applyModeUI sees a change
+        applyModeUI(data.auto_mode);
+        const msg = data.auto_mode
+          ? '🤖 Automated mode restored — ESP32 sensors back in control'
+          : '🕹️ Manual mode active — you have full control';
+        addLog(msg, data.auto_mode ? 'ok' : 'warn');
+        showToast(msg, data.auto_mode ? 'success' : 'warning', 4000);
+      }
+    } catch (e) {
+      showToast('Mode switch failed — check connection', 'error', 3500);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function fetchMode() {
+    try {
+      const res  = await fetch(\`\${API_BASE}/api/water/mode\`);
+      const data = await res.json();
+      currentAutoMode = !data.auto_mode; // prime for applyModeUI diff check
+      applyModeUI(!!data.auto_mode);
+    } catch (_) {}
+  }
+
+  // ── Water control ─────────────────────────────────────────────────────────
+  async function sendControl(action) {
+    const isResetCmd = action.toLowerCase().startsWith('reset');
+
+    // Block non-reset actuator commands if currently in auto mode
+    if (currentAutoMode && !isResetCmd) {
+      showToast('⚠️ Switch to Manual mode first', 'warning', 3500);
+      // Briefly flash the banner to draw attention
+      const banner = document.getElementById('modeBanner');
+      banner.style.outline = '2px solid var(--warn)';
+      setTimeout(() => { banner.style.outline = ''; }, 1200);
+      return;
+    }
+
+    try {
+      const res = await fetch(\`\${API_BASE}/api/water/control\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        showToast('Server blocked: ' + (data.error || action), 'error', 3500);
+        return;
+      }
+      addLog('⚙ Control: ' + action, 'ok');
+      showToast('⚙ Sent: ' + action, 'success', 2500);
+      setTimeout(pollWater, 800);
+    } catch (_) {
+      showToast('Command failed — check connection', 'error', 3000);
+    }
+  }
+
   // ── Motor run ─────────────────────────────────────────────────────────────
   async function runMotorManual() {
     const steps=parseInt(document.getElementById('manualSteps').value)||200;
@@ -1671,15 +1920,6 @@ app.get('/', (req, res) => {
     catch(_) { addLog('Feed command failed','warn'); showToast('Feed command failed','error',3000); }
     finally { setTimeout(()=>{ btn.disabled=false; btn.textContent='🍤 Feed Now'; },2000); }
   });
-
-  // ── Water control ─────────────────────────────────────────────────────────
-  async function sendControl(action) {
-    try {
-      await fetch(\`\${API_BASE}/api/water/control\`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
-      addLog('⚙ Control: '+action,'ok'); showToast('⚙ Sent: '+action,'success',2500);
-      setTimeout(pollWater,800);
-    } catch(_) { showToast('Command failed','error',3000); }
-  }
 
   // ── Save motor ────────────────────────────────────────────────────────────
   function saveMotorSettings() {
@@ -1713,12 +1953,15 @@ app.get('/', (req, res) => {
   addLog('System initializing…','');
   const saved=localStorage.getItem('tunnel_url')||'';
   if (saved) document.getElementById('tunnelInput').value=saved;
+
   fetchDetectionState();
+  fetchMode();           // load current auto/manual mode from server
   fetchFrame();
   pollStatus();
   pollWater();
   fetchHistory();
   fetchAlerts();
+
   setInterval(pollStatus,  2000);
   setInterval(pollWater,   2500);
   setInterval(fetchHistory,15000);
@@ -1742,7 +1985,7 @@ app.get('/status', (req, res) => {
     }
     try {
         const data = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
-        data.zone_boundary   = cfg.motor_zone_boundary || 320;
+        data.zone_boundary    = cfg.motor_zone_boundary || 320;
         data.detection_paused = detectionPaused;
         res.json(data);
     } catch (_) {

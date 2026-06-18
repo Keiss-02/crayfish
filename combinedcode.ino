@@ -3,7 +3,7 @@
 
 // ================= PINS =================
 #define TURBIDITY_PIN      34
-#define DS18B20_PIN        15
+#define DS18B20_PIN        22
 #define FLOW_PIN           27
 #define MQ137_PIN          35
 #define UV_RELAY_PIN        4
