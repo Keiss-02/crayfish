@@ -158,7 +158,7 @@ class WaterMonitor:
                 if telemetry:
                     status.update(telemetry)
                     status["connected"] = True
-                    status["last_reply"] = telemetry.get("raw_line", status.get("last_reply"))
+                    status["last_reply"] = f"T:{telemetry.get('temperature_c','?')}°C | NH3:{telemetry.get('ammonia_raw','?')} | Pump:{telemetry.get('pump_state','?').upper()}"
 
                 write_water_status(status)
                 record_broker_status({

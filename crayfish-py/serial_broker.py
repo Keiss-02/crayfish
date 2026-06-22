@@ -85,18 +85,22 @@ def _parse_status_line(line):
         note_parts.append(f"Valve {valve_state}")
 
     return {
-        "temperature_c": temp_c,
-        "turbidity_ntu": turbidity_raw,
-        "pump_state": str(pairs.get("PUMP") or "idle").lower(),
-        "flow_lpm": flow_lpm,
-        "total_liters": total_l,
-        "ammonia_raw": nh3_raw,
-        "uv_state": str(pairs.get("UV") or "OFF").lower(),
-        "peltier_state": str(pairs.get("PELTIER") or "OFF").lower(),
-        "valve_state": str(valve_state or "unknown").lower(),
-        "note": " | ".join(note_parts) if note_parts else "Live telemetry",
-        "raw_line": line,
-    }
+    "temperature_c": temp_c,
+    "turbidity_ntu": turbidity_raw,
+    "pump_state": str(pairs.get("PUMP") or "idle").lower(),
+    "flow_lpm": flow_lpm,
+    "total_liters": total_l,
+    "ammonia_raw": nh3_raw,
+    "uv_state": str(pairs.get("UV") or "OFF").lower(),
+    "peltier_state": str(pairs.get("PELTIER") or "OFF").lower(),
+    "valve_state": str(valve_state or "unknown").lower(),
+    "ovr_pump":    pairs.get("OVR_PUMP") == "1",
+    "ovr_uv":      pairs.get("OVR_UV") == "1",
+    "ovr_peltier": pairs.get("OVR_PELTIER") == "1",
+    "ovr_valve":   pairs.get("OVR_VALVE") == "1",
+    "note": " | ".join(note_parts) if note_parts else "Live telemetry",
+    "raw_line": line,
+}
 
 
 def _atomic_write(path, payload):

@@ -444,20 +444,25 @@ def open_picamera(max_attempts=6, retry_delay=3):
 def drop_food(zone=''):
     global last_feed_time
 
-    steps     = ESP32_STEPS
-    direction = ESP32_DIRECTION
+    steps     = 800   # enough to open the food hole
+    direction = 'CW'  # forward to dispense
 
     if zone == 'left':
-        steps     = MOTOR_ZONE_LEFT_STEPS
         direction = MOTOR_ZONE_LEFT_DIR
     elif zone == 'right':
-        steps     = MOTOR_ZONE_RIGHT_STEPS
         direction = MOTOR_ZONE_RIGHT_DIR
 
-    print(f"[MOTOR] Sending MOVE {steps} {direction} to ESP32 (zone={zone!r})")
+    # opposite direction for return
+    return_dir = 'CCW' if direction == 'CW' else 'CW'
 
-    if not send_esp32_move(steps, direction):
-        print("[MOTOR] Serial not available — skipping feed.")
+    print(f"[MOTOR] Dispensing — {steps} steps {direction}")
+    send_esp32_move(steps, direction)
+
+    # wait for motor to finish, then return to home
+    time.sleep(2)
+
+    print(f"[MOTOR] Returning home — {steps} steps {return_dir}")
+    send_esp32_move(steps, return_dir)
 
     last_feed_time = time.time()
 
