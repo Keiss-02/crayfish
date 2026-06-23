@@ -1182,15 +1182,7 @@ app.get('/', (req, res) => {
                 <button class="btn-off manual-btn" disabled onclick="sendControl('COOL_OFF')">OFF</button>
               </div>
             </div>
-            <div class="actuator-card">
-              <div class="actuator-icon">🔄</div>
-              <div class="actuator-name">Peltier Circ. Pump</div>
-              <div class="actuator-state off" id="act-circ-state">● Offline / OFF</div>
-              <div class="actuator-btns">
-                <button class="btn-on manual-btn" disabled onclick="sendControl('circ_pump_on')">ON</button>
-                <button class="btn-off manual-btn" disabled onclick="sendControl('circ_pump_off')">OFF</button>
-              </div>
-            </div>
+            
           </div>
 
           <!-- Override controls — always available in Manual mode; resets available in both -->
@@ -1655,7 +1647,7 @@ app.get('/', (req, res) => {
       const uvOn=(s.uv_state||'').toUpperCase()==='ON';
       const valveOn=(s.valve_state||'').toUpperCase()==='OPEN';
       const peltOn=(s.peltier_state||'').toUpperCase()==='ON';
-      const circOn=(s.circ_pump_state||'').toUpperCase()==='ON';
+      
 
       function setActState(id,on,onTxt,offTxt) {
         const el=document.getElementById(id);
@@ -1666,7 +1658,7 @@ app.get('/', (req, res) => {
       setActState('act-pump-state',  pumpOn, 'ON',   'OFF');
       setActState('act-valve-state', valveOn,'OPEN', 'CLOSED');
       setActState('act-peltier-state',peltOn,'ON',   'OFF');
-      setActState('act-circ-state', circOn, 'ON', 'OFF');
+      
 
       const lc=s.last_command;
       document.getElementById('act-last-cmd').textContent  =lc?(typeof lc==='string'?lc:(lc.action||'--').toUpperCase()):'—';
