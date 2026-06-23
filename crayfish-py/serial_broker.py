@@ -313,7 +313,7 @@ def send_water_command(action, value=None):
         "UV_ON", "UV_OFF", "VALVE_ON", "VALVE_OFF",
         "COOL_MAX", "COOL_OFF", "PUMP_ON", "PUMP_OFF",
         "RESET_OVERRIDE", "RESET_PUMP", "RESET_UV",
-        "RESET_PELTIER", "RESET_VALVE"
+        "RESET_PELTIER", "RESET_VALVE", "CIRC_PUMP_ON", "CIRC_PUMP_OFF"
     }
 
     action_str = str(action or "").strip()
