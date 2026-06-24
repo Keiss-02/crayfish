@@ -36,6 +36,7 @@ const waterLogSchema = new mongoose.Schema({
   pump_state:     String,
   uv_state:       String,
   peltier_state:  String,
+  circ_pump_state: String,
   valve_state:    String,
   note:           String,
   connected:      Boolean,
@@ -76,6 +77,7 @@ async function saveReading(status, trigger) {
       ammonia_raw:    status.ammonia_raw,
       ammonia_status: status.note,
       pump_state:     status.pump_state,
+      circ_pump_state: status.circ_pump_state,
       uv_state:       status.uv_state,
       peltier_state:  status.peltier_state,
       valve_state:    status.valve_state,
@@ -84,7 +86,6 @@ async function saveReading(status, trigger) {
       trigger:        trigger
     });
 
-    // Update last saved snapshot
     lastSaved = {
       ammonia_raw:   status.ammonia_raw,
       temperature_c: status.temperature_c,
@@ -93,6 +94,7 @@ async function saveReading(status, trigger) {
       pump_state:    status.pump_state,
       uv_state:      status.uv_state,
       peltier_state: status.peltier_state,
+      circ_pump_state: status.circ_pump_state,
       valve_state:   status.valve_state
     };
 
@@ -104,8 +106,8 @@ async function saveReading(status, trigger) {
 
 async function checkAlerts(status) {
   const checks = [
-    { condition: status.ammonia_raw > 2500,  type: 'high_ammonia',   severity: 'critical', value: status.ammonia_raw,   threshold: 2500 },
-    { condition: status.ammonia_raw > 2000,  type: 'high_ammonia',   severity: 'warning',  value: status.ammonia_raw,   threshold: 2000 },
+    { condition: status.ammonia_raw > 5000,  type: 'high_ammonia',   severity: 'critical', value: status.ammonia_raw,   threshold: 2500 },
+    { condition: status.ammonia_raw > 4500,  type: 'high_ammonia',   severity: 'warning',  value: status.ammonia_raw,   threshold: 2000 },
     { condition: status.temperature_c > 30,  type: 'high_temp',      severity: 'critical', value: status.temperature_c, threshold: 30   },
     { condition: status.temperature_c > 28,  type: 'high_temp',      severity: 'warning',  value: status.temperature_c, threshold: 28   },
     { condition: status.turbidity_ntu > 2500,type: 'high_turbidity', severity: 'critical', value: status.turbidity_ntu, threshold: 2500 },
@@ -126,13 +128,13 @@ async function checkAlerts(status) {
       } catch (e) {
         console.error('[MongoDB] Alert save error:', e.message);
       }
-      break; // only log highest severity per check cycle
+      break;
     }
   }
 }
 
 function hasSignificantChange(status) {
-  if (lastSaved.ammonia_raw === null) return false; // first reading, skip
+  if (lastSaved.ammonia_raw === null) return false;
 
   const ammoniaChanged   = Math.abs((status.ammonia_raw   || 0) - (lastSaved.ammonia_raw   || 0)) >= 100;
   const tempChanged      = Math.abs((status.temperature_c || 0) - (lastSaved.temperature_c || 0)) >= 0.5;
@@ -147,6 +149,7 @@ function hasActuatorChange(status) {
 
   return (
     status.pump_state    !== lastSaved.pump_state    ||
+    status.circ_pump_state !== lastSaved.circ_pump_state ||
     status.uv_state      !== lastSaved.uv_state      ||
     status.peltier_state !== lastSaved.peltier_state ||
     status.valve_state   !== lastSaved.valve_state
@@ -154,18 +157,14 @@ function hasActuatorChange(status) {
 }
 
 async function logWaterReading(status) {
-  //if (!status.connected) return;
-
   const now = Date.now() / 1000;
 
-  // First reading ever — save immediately as baseline
   if (lastSaved.ammonia_raw === null) {
     await saveReading(status, 'interval');
     lastLoggedTs = now;
     return;
   }
 
-  // Actuator state changed — save immediately
   if (hasActuatorChange(status)) {
     await saveReading(status, 'actuator_change');
     lastLoggedTs = now;
@@ -173,7 +172,6 @@ async function logWaterReading(status) {
     return;
   }
 
-  // Significant sensor value change — save immediately
   if (hasSignificantChange(status)) {
     await saveReading(status, 'value_change');
     lastLoggedTs = now;
@@ -181,7 +179,6 @@ async function logWaterReading(status) {
     return;
   }
 
-  // Forced interval save (every 20 seconds)
   if ((now - lastLoggedTs) > 20) {
     await saveReading(status, 'interval');
     lastLoggedTs = now;
@@ -189,9 +186,10 @@ async function logWaterReading(status) {
   }
 }
 
-// ── In-memory detection toggle ────────────────────────────────────────────────
+// ── In-memory state ───────────────────────────────────────────────────────────
 let detectionPaused = false;
-let lastLoggedTs = 0;
+let autoMode        = true;   // true = ESP32 sensors control actuators; false = manual
+let lastLoggedTs    = 0;
 
 function initConfig() {
     if (!fs.existsSync(configFile)) {
@@ -293,6 +291,7 @@ app.get('/api/water/status', (req, res) => {
     pump_state: 'idle',
     uv_state: 'off',
     peltier_state: 'off',
+    circ_pump_state: 'off',
     valve_state: 'unknown',
     last_command: null,
     last_reply: null,
@@ -300,13 +299,34 @@ app.get('/api/water/status', (req, res) => {
     ts: Date.now() / 1000
   };
   const status = readJsonFile(waterStatusFile, fallback);
+  status.auto_mode = autoMode;   // always inject current mode
 
-logWaterReading(status);
+  logWaterReading(status);
 
   res.json(status);
 });
 
-// ── NEW: History endpoint ─────────────────────────────────────────────────────
+// ── Mode endpoints ────────────────────────────────────────────────────────────
+app.get('/api/water/mode', (req, res) => {
+  res.json({ ok: true, auto_mode: autoMode });
+});
+
+app.post('/api/water/mode', (req, res) => {
+  if (typeof req.body.auto_mode === 'boolean') {
+    autoMode = req.body.auto_mode;
+    console.log(`[MODE] Switched to ${autoMode ? 'AUTOMATED' : 'MANUAL'}`);
+
+    // When restoring auto mode, release all ESP32 overrides immediately
+    if (autoMode) {
+      const command = { action: 'reset_override', value: null, source: 'mode_switch', ts: Date.now() };
+      writeJsonFile(waterCommandFile, command);
+      console.log('[MODE] Sent RESET_OVERRIDE to ESP32');
+    }
+  }
+  res.json({ ok: true, auto_mode: autoMode });
+});
+
+// ── History endpoint ──────────────────────────────────────────────────────────
 app.get('/api/water/history', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
@@ -360,11 +380,20 @@ app.post('/api/water/config', (req, res) => {
 
 app.post('/api/water/control', (req, res) => {
   const action = (req.body && req.body.action ? String(req.body.action) : 'refresh').trim().toLowerCase();
-  const value = req.body && req.body.value !== undefined ? req.body.value : null;
+  const value  = req.body && req.body.value !== undefined ? req.body.value : null;
+
+  // Safety guard on the server: block non-reset actuator commands when in auto mode
+  const isResetCmd = action.startsWith('reset');
+  if (autoMode && !isResetCmd) {
+    console.warn(`[CONTROL] Blocked '${action}' — system is in AUTOMATED mode`);
+    return res.status(403).json({ ok: false, error: 'System is in Automated mode. Switch to Manual first.' });
+  }
+
   const command = { action, value, source: 'dashboard', ts: Date.now() };
   if (!writeJsonFile(waterCommandFile, command)) {
     return res.status(500).json({ ok: false, error: 'Failed to queue water command' });
   }
+  console.log(`[CONTROL] Queued: ${action}`);
   res.json({ ok: true, queued: command });
 });
 
@@ -382,6 +411,251 @@ function broadcastFrame() {
     }
 }
 setInterval(broadcastFrame, 100);
+
+app.post('/api/test/command', (req, res) => {
+  const cmd = (req.body.cmd || '').toString().trim().toUpperCase();
+  const allowed = [
+    'UV_ON','UV_OFF','VALVE_ON','VALVE_OFF',
+    'PUMP_ON','PUMP_OFF','PELTIER_ON','PELTIER_OFF',
+    'MOVE_CW','MOVE_CCW','PING'
+  ];
+  if (!allowed.includes(cmd)) {
+    return res.status(400).json({ ok: false, error: 'Unknown command' });
+  }
+  const command = { action: cmd, source: 'test_page', ts: Date.now() };
+  writeJsonFile(waterCommandFile, command);
+  console.log(`[TEST] Command queued: ${cmd}`);
+  res.json({ ok: true, cmd });
+});
+
+app.get('/test', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrayCheck · Manual Test</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 24px; }
+    h1 { font-size: 20px; font-weight: 700; color: #f8fafc; margin-bottom: 4px; }
+    .sub { font-size: 12px; color: #64748b; margin-bottom: 24px; }
+    .tunnel-bar { display: flex; gap: 8px; margin-bottom: 24px; align-items: center; }
+    .tunnel-bar input { flex: 1; padding: 8px 12px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 12px; outline: none; }
+    .tunnel-bar button { padding: 8px 16px; background: #3b82f6; border: none; border-radius: 8px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .sensors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+    .sensor-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
+    .sensor-label { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .sensor-value { font-size: 24px; font-weight: 700; color: #f8fafc; }
+    .sensor-unit { font-size: 12px; color: #64748b; margin-left: 3px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+    .act-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
+    .act-name { font-size: 13px; font-weight: 600; color: #f8fafc; margin-bottom: 4px; }
+    .act-state { font-size: 11px; font-weight: 600; margin-bottom: 12px; color: #64748b; }
+    .act-state.on { color: #22c55e; }
+    .btns { display: flex; gap: 8px; }
+    .btn-on { flex: 1; padding: 8px; border: 1.5px solid #22c55e; background: rgba(34,197,94,0.1); color: #22c55e; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .btn-off { flex: 1; padding: 8px; border: 1.5px solid #ef4444; background: rgba(239,68,68,0.1); color: #ef4444; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .btn-on:hover { background: rgba(34,197,94,0.2); }
+    .btn-off:hover { background: rgba(239,68,68,0.2); }
+    .motor-btns { display: flex; gap: 8px; }
+    .btn-motor { flex: 1; padding: 8px; border: 1.5px solid #f59e0b; background: rgba(245,158,11,0.1); color: #f59e0b; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .btn-motor:hover { background: rgba(245,158,11,0.2); }
+    .log-box { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
+    .log-title { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+    .log-area { font-family: monospace; font-size: 11px; color: #94a3b8; height: 200px; overflow-y: auto; line-height: 1.8; }
+    .log-entry { display: flex; gap: 10px; }
+    .log-time { color: #3b82f6; flex-shrink: 0; }
+    .log-ok { color: #22c55e; }
+    .log-err { color: #ef4444; }
+    .log-info { color: #94a3b8; }
+    .conn-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 8px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; font-size: 12px; }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
+    .conn-dot.on { background: #22c55e; }
+    .conn-dot.off { background: #ef4444; }
+  </style>
+</head>
+<body>
+  <h1>🦞 CrayCheck — Manual Test Page</h1>
+  <div class="sub">Group 6 · BSIT-S-3A-T · TUP Taguig — Hardware validation mode</div>
+
+  <div class="tunnel-bar">
+    <input id="tunnelInput" type="text" placeholder="Paste tunnel URL (leave empty if local)…">
+    <button onclick="setTunnel()">Set</button>
+  </div>
+
+  <div class="conn-bar">
+    <div class="conn-dot" id="connDot"></div>
+    <span id="connLabel">ESP32: checking…</span>
+    <span style="margin-left:auto;color:#64748b;" id="lastUpdate">—</span>
+  </div>
+
+  <div class="sensors">
+    <div class="sensor-card">
+      <div class="sensor-label">🧪 Ammonia MQ-137</div>
+      <div class="sensor-value"><span id="s-nh3">--</span><span class="sensor-unit">raw</span></div>
+    </div>
+    <div class="sensor-card">
+      <div class="sensor-label">🌡 Temperature</div>
+      <div class="sensor-value"><span id="s-temp">--</span><span class="sensor-unit">°C</span></div>
+    </div>
+    <div class="sensor-card">
+      <div class="sensor-label">〰 Turbidity</div>
+      <div class="sensor-value"><span id="s-turb">--</span><span class="sensor-unit">raw</span></div>
+    </div>
+    <div class="sensor-card">
+      <div class="sensor-label">≋ Water Flow</div>
+      <div class="sensor-value"><span id="s-flow">--</span><span class="sensor-unit">L/min</span></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="act-card">
+      <div class="act-name">☀️ UV Sterilizer</div>
+      <div class="act-state" id="st-uv">● OFF</div>
+      <div class="btns">
+        <button class="btn-on"  onclick="send('UV_ON')">ON</button>
+        <button class="btn-off" onclick="send('UV_OFF')">OFF</button>
+      </div>
+    </div>
+    <div class="act-card">
+      <div class="act-name">💧 Water Pump (NH3)</div>
+      <div class="act-state" id="st-pump">● OFF</div>
+      <div class="btns">
+        <button class="btn-on"  onclick="send('PUMP_ON')">ON</button>
+        <button class="btn-off" onclick="send('PUMP_OFF')">OFF</button>
+      </div>
+    </div>
+    <div class="act-card">
+      <div class="act-name">🚰 Solenoid Valve</div>
+      <div class="act-state" id="st-valve">● CLOSED</div>
+      <div class="btns">
+        <button class="btn-on"  onclick="send('VALVE_ON')">OPEN</button>
+        <button class="btn-off" onclick="send('VALVE_OFF')">CLOSE</button>
+      </div>
+    </div>
+    <div class="act-card">
+      <div class="act-name">❄️ Peltier Cooler</div>
+      <div class="act-state" id="st-peltier">● OFF</div>
+      <div class="btns">
+        <button class="btn-on"  onclick="send('PELTIER_ON')">ON</button>
+        <button class="btn-off" onclick="send('PELTIER_OFF')">OFF</button>
+      </div>
+      <div style="font-size:10px;color:#64748b;margin-top:6px;">Circ. pump follows peltier automatically</div>
+    </div>
+    <div class="act-card">
+      <div class="act-name">⚙️ Stepper Motor</div>
+      <div class="act-state" id="st-motor">● IDLE</div>
+      <div class="motor-btns">
+        <button class="btn-motor" onclick="send('MOVE_CW')">▶ CW</button>
+        <button class="btn-motor" onclick="send('MOVE_CCW')">◀ CCW</button>
+      </div>
+      <div style="font-size:10px;color:#64748b;margin-top:6px;">800 steps per click</div>
+    </div>
+    <div class="act-card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;">
+      <div style="font-size:11px;color:#64748b;text-align:center;">Camera + Detection</div>
+      <div style="font-size:11px;color:#22c55e;font-weight:600;">✓ Working — tested separately</div>
+      <div style="font-size:10px;color:#64748b;text-align:center;">No test needed here</div>
+    </div>
+  </div>
+
+  <div class="log-box">
+    <div class="log-title">📋 Command Log</div>
+    <div class="log-area" id="logArea"></div>
+  </div>
+
+<script>
+  let API_BASE = localStorage.getItem('test_tunnel') || '';
+  let states = { uv:'OFF', pump:'OFF', valve:'CLOSED', peltier:'OFF', motor:'IDLE' };
+
+  function setTunnel() {
+    API_BASE = document.getElementById('tunnelInput').value.trim().replace(/\\/$/, '');
+    localStorage.setItem('test_tunnel', API_BASE);
+    log('Tunnel URL set: ' + (API_BASE || 'local'), 'info');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const inp = document.getElementById('tunnelInput');
+    if (inp && API_BASE) inp.value = API_BASE;
+  });
+
+  function log(msg, type='info') {
+    const t = new Date().toTimeString().slice(0,8);
+    const area = document.getElementById('logArea');
+    const e = document.createElement('div');
+    e.className = 'log-entry';
+    e.innerHTML = \`<span class="log-time">\${t}</span><span class="log-\${type}">\${msg}</span>\`;
+    area.prepend(e);
+    while (area.children.length > 60) area.removeChild(area.lastChild);
+  }
+
+  function updateStateUI(cmd) {
+    const map = {
+      'UV_ON':      { id:'st-uv',      text:'● ON',     cls:'on' },
+      'UV_OFF':     { id:'st-uv',      text:'● OFF',    cls:''   },
+      'PUMP_ON':    { id:'st-pump',    text:'● ON',     cls:'on' },
+      'PUMP_OFF':   { id:'st-pump',    text:'● OFF',    cls:''   },
+      'VALVE_ON':   { id:'st-valve',   text:'● OPEN',   cls:'on' },
+      'VALVE_OFF':  { id:'st-valve',   text:'● CLOSED', cls:''   },
+      'PELTIER_ON': { id:'st-peltier', text:'● ON',     cls:'on' },
+      'PELTIER_OFF':{ id:'st-peltier', text:'● OFF',    cls:''   },
+      'MOVE_CW':    { id:'st-motor',   text:'● CW done',cls:''   },
+      'MOVE_CCW':   { id:'st-motor',   text:'● CCW done',cls:''  },
+    };
+    const m = map[cmd];
+    if (!m) return;
+    const el = document.getElementById(m.id);
+    if (el) { el.textContent = m.text; el.className = 'act-state ' + m.cls; }
+  }
+
+  async function send(cmd) {
+    log('Sending: ' + cmd, 'info');
+    try {
+      const res = await fetch(\`\${API_BASE}/api/test/command\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        log('✓ ' + cmd + ' — queued to ESP32', 'ok');
+        updateStateUI(cmd);
+      } else {
+        log('✗ ' + cmd + ' — ' + (data.error || 'failed'), 'err');
+      }
+    } catch(e) {
+      log('✗ Connection error: ' + e.message, 'err');
+    }
+  }
+
+  async function pollSensors() {
+    try {
+      const res = await fetch(\`\${API_BASE}/api/water/status\`, { cache: 'no-store' });
+      const s = await res.json();
+      const connected = !!s.connected;
+      document.getElementById('connDot').className = 'conn-dot ' + (connected ? 'on' : 'off');
+      document.getElementById('connLabel').textContent = 'ESP32: ' + (connected ? 'Online' : 'Offline');
+      document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+      if (s.ammonia_raw   !== null) document.getElementById('s-nh3').textContent  = s.ammonia_raw;
+      if (s.temperature_c !== null) document.getElementById('s-temp').textContent = parseFloat(s.temperature_c).toFixed(1);
+      if (s.turbidity_ntu !== null) document.getElementById('s-turb').textContent = s.turbidity_ntu;
+      if (s.flow_lpm      !== null) document.getElementById('s-flow').textContent = parseFloat(s.flow_lpm).toFixed(2);
+    } catch(_) {
+      document.getElementById('connDot').className = 'conn-dot off';
+      document.getElementById('connLabel').textContent = 'ESP32: Offline';
+    }
+  }
+
+  log('Manual test page ready', 'info');
+  log('Upload the test .ino to ESP32 first', 'info');
+  pollSensors();
+  setInterval(pollSensors, 2000);
+<\/script>
+</body>
+</html>`);
+});
+
 
 // ── Main dashboard ────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
@@ -492,6 +766,23 @@ app.get('/', (req, res) => {
     .conn-dot.unknown { background: var(--muted); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     .conn-dot.online { animation: pulse 2.5s ease-in-out infinite; }
+
+    /* ── Mode pill in topbar ── */
+    .mode-pill {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 14px; border-radius: 999px;
+      border: 1.5px solid rgba(0,179,126,0.4);
+      background: rgba(0,179,126,0.07);
+      font-size: 12px; font-weight: 600; color: var(--accent2);
+      cursor: pointer; transition: all 0.2s; user-select: none;
+    }
+    .mode-pill:hover { background: rgba(0,179,126,0.14); }
+    .mode-pill.manual {
+      border-color: rgba(245,158,11,0.45);
+      background: rgba(245,158,11,0.08);
+      color: var(--warn);
+    }
+    .mode-pill.manual:hover { background: rgba(245,158,11,0.16); }
 
     /* ── App shell ── */
     .app-shell { flex: 1; display: flex; overflow: hidden; }
@@ -670,14 +961,64 @@ app.get('/', (req, res) => {
     .stat-label { color: var(--text2); font-size: 12px; }
     .stat-value { font-family: var(--mono); font-size: 13px; color: var(--navy); font-weight: 600; }
 
+    /* ── Mode banner ── */
+    .mode-banner {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px; border-radius: 12px; border: 1.5px solid;
+      transition: all 0.3s;
+    }
+    .mode-banner.auto {
+      background: rgba(0,179,126,0.06);
+      border-color: rgba(0,179,126,0.35);
+    }
+    .mode-banner.manual {
+      background: rgba(245,158,11,0.07);
+      border-color: rgba(245,158,11,0.4);
+    }
+    .mode-banner-left { display: flex; align-items: center; gap: 14px; }
+    .mode-banner-icon { font-size: 28px; line-height: 1; }
+    .mode-banner-title { font-size: 15px; font-weight: 700; color: var(--navy); }
+    .mode-banner-desc  { font-size: 11px; color: var(--muted); margin-top: 3px; max-width: 480px; }
+    .mode-switch-btn {
+      padding: 10px 22px; border-radius: 8px; border: 1.5px solid;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      letter-spacing: 0.04em; transition: all 0.15s; white-space: nowrap;
+    }
+    .mode-switch-btn.to-manual {
+      border-color: rgba(245,158,11,0.45);
+      background: rgba(245,158,11,0.07);
+      color: var(--warn);
+    }
+    .mode-switch-btn.to-manual:hover { background: rgba(245,158,11,0.15); border-color: var(--warn); }
+    .mode-switch-btn.to-auto {
+      border-color: rgba(0,179,126,0.45);
+      background: rgba(0,179,126,0.07);
+      color: var(--accent2);
+    }
+    .mode-switch-btn.to-auto:hover { background: rgba(0,179,126,0.15); border-color: var(--accent2); }
+
     /* ── Actuator cards ── */
     .actuator-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .actuator-card {
       background: var(--surface2); border: 1px solid var(--border);
       border-radius: 10px; padding: 16px;
-      transition: box-shadow 0.15s;
+      transition: box-shadow 0.15s, opacity 0.25s;
+      position: relative;
     }
     .actuator-card:hover { box-shadow: var(--shadow); }
+
+    /* Lock overlay badge when in auto mode */
+    .actuator-grid.locked .actuator-card { opacity: 0.62; }
+    .actuator-grid.locked .actuator-card::after {
+      content: '🔒 AUTO';
+      position: absolute; top: 8px; right: 10px;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+      color: var(--accent2);
+      background: rgba(0,179,126,0.1);
+      border: 1px solid rgba(0,179,126,0.3);
+      border-radius: 999px; padding: 2px 8px;
+    }
+
     .actuator-icon { font-size: 22px; margin-bottom: 6px; }
     .actuator-name { font-size: 13px; font-weight: 600; color: var(--navy); margin-bottom: 4px; }
     .actuator-state { font-size: 11px; font-weight: 600; margin-bottom: 12px; }
@@ -692,6 +1033,9 @@ app.get('/', (req, res) => {
     .btn-on:hover  { background: rgba(0,179,126,0.15); border-color: var(--accent2); }
     .btn-off { border-color: rgba(229,62,90,0.35); background: rgba(229,62,90,0.06); color: var(--danger); }
     .btn-off:hover { background: rgba(229,62,90,0.13); border-color: var(--danger); }
+    .btn-on:disabled, .btn-off:disabled {
+      opacity: 0.35; cursor: not-allowed; pointer-events: none;
+    }
 
     /* ── Charts ── */
     .chart-wrap { position: relative; height: 150px; }
@@ -829,6 +1173,11 @@ app.get('/', (req, res) => {
     </div>
   </div>
   <div class="topbar-right">
+    <!-- Mode quick-pill -->
+    <div class="mode-pill" id="topbarModePill" onclick="showSection('actuators')" title="Click to manage mode">
+      <span id="topbarModeIcon">🤖</span>
+      <span id="topbarModeLabel">Auto</span>
+    </div>
     <div class="conn-pill">
       <div class="conn-dot unknown" id="esp32Dot"></div>
       <span>ESP32</span>
@@ -855,6 +1204,7 @@ app.get('/', (req, res) => {
       <button class="nav-item" onclick="showSection('motorzones')" id="nav-motorzones"><span class="ni">⚡</span>Motor Zones</button>
       <button class="nav-item" onclick="showSection('alerts')" id="nav-alerts"><span class="ni">🔔</span>Alerts</button>
       <button class="nav-item" onclick="showSection('eventlog')" id="nav-eventlog"><span class="ni">📋</span>Event Log</button>
+      <button class="nav-item" onclick="showSection('schematic')" id="nav-schematic"><span class="ni">🔌</span>Schematic View</button>
     </div>
     <div class="sidebar-footer">
       Group 6 · BSIT-S-3A-T<br>TUP Taguig
@@ -867,12 +1217,10 @@ app.get('/', (req, res) => {
     <!-- ══ LIVE FEED ══ -->
     <div class="page-section active" id="section-livefeed">
 
-      <!-- No-connection banner -->
       <div class="no-conn-banner" id="noConnBanner">
         ⚠️ ESP32 not connected — sensor readings unavailable. Check serial connection on Pi.
       </div>
 
-      <!-- Metrics -->
       <div class="metric-row">
         <div class="metric-card c-blue">
           <div class="metric-label">🧪 Ammonia (MQ-137)</div>
@@ -896,10 +1244,8 @@ app.get('/', (req, res) => {
         </div>
       </div>
 
-      <!-- Two col -->
       <div class="two-col">
 
-        <!-- Left -->
         <div class="col-stack">
           <div class="card">
             <div class="card-header">
@@ -930,7 +1276,6 @@ app.get('/', (req, res) => {
             </div>
           </div>
 
-          <!-- Snapshot -->
           <div class="card">
             <div class="card-header">
               <div class="card-header-left">📸 LAST MOTION SNAPSHOT</div>
@@ -946,7 +1291,6 @@ app.get('/', (req, res) => {
           </div>
         </div>
 
-        <!-- Right -->
         <div class="col-stack">
           <div class="card">
             <div class="card-header">📈 SENSOR TRENDS · LAST 20 READINGS</div>
@@ -984,8 +1328,8 @@ app.get('/', (req, res) => {
           <div class="card-body">
             <div class="stat-row"><span class="stat-label">Raw ADC value</span><span class="stat-value" id="s-ammonia-raw">--</span></div>
             <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value" id="s-ammonia-status">--</span></div>
-            <div class="stat-row"><span class="stat-label">Warning threshold</span><span class="stat-value" style="color:var(--muted)">2000</span></div>
-            <div class="stat-row"><span class="stat-label">Critical threshold</span><span class="stat-value" style="color:var(--muted)">2500</span></div>
+            <div class="stat-row"><span class="stat-label">Warning threshold</span><span class="stat-value" style="color:var(--muted)">5000</span></div>
+            <div class="stat-row"><span class="stat-label">Critical threshold</span><span class="stat-value" style="color:var(--muted)">5500</span></div>
             <div style="margin-top:14px;"><div class="chart-wrap"><canvas id="chartAmmonia2"></canvas></div></div>
           </div>
         </div>
@@ -1022,17 +1366,39 @@ app.get('/', (req, res) => {
 
     <!-- ══ ACTUATORS ══ -->
     <div class="page-section" id="section-actuators">
+
+      <!-- ── Mode banner ── -->
+      <div class="mode-banner auto" id="modeBanner">
+        <div class="mode-banner-left">
+          <div class="mode-banner-icon" id="modeBannerIcon">🤖</div>
+          <div>
+            <div class="mode-banner-title" id="modeBannerTitle">Automated Mode</div>
+            <div class="mode-banner-desc" id="modeBannerDesc">
+              Actuators are fully controlled by ESP32 sensor readings.
+              Manual buttons are locked — switch to Manual to override.
+            </div>
+          </div>
+        </div>
+        <button class="mode-switch-btn to-manual" id="modeSwitchBtn" onclick="toggleMode()">
+          ⚡ Switch to Manual
+        </button>
+      </div>
+
       <div class="card">
-        <div class="card-header">⚙️ ACTUATOR CONTROL PANEL</div>
+        <div class="card-header">
+          <span>⚙️ ACTUATOR CONTROL PANEL</span>
+          <span id="modeBadgeHeader" style="font-size:10px;padding:3px 10px;border-radius:999px;background:rgba(0,179,126,0.1);color:var(--accent2);border:1px solid rgba(0,179,126,0.3);letter-spacing:0.06em;">🤖 AUTOMATED</span>
+        </div>
         <div class="card-body">
-          <div class="actuator-grid">
+
+          <div class="actuator-grid locked" id="actuatorGrid">
             <div class="actuator-card">
               <div class="actuator-icon">☀️</div>
               <div class="actuator-name">UV Sterilizer</div>
               <div class="actuator-state off" id="act-uv-state">● Offline / OFF</div>
               <div class="actuator-btns">
-                <button class="btn-on"  onclick="sendControl('UV_ON')">ON</button>
-                <button class="btn-off" onclick="sendControl('UV_OFF')">OFF</button>
+                <button class="btn-on  manual-btn" disabled onclick="sendControl('UV_ON')">ON</button>
+                <button class="btn-off manual-btn" disabled onclick="sendControl('UV_OFF')">OFF</button>
               </div>
             </div>
             <div class="actuator-card">
@@ -1040,8 +1406,8 @@ app.get('/', (req, res) => {
               <div class="actuator-name">Water Pump</div>
               <div class="actuator-state off" id="act-pump-state">● Offline / OFF</div>
               <div class="actuator-btns">
-                <button class="btn-on"  onclick="sendControl('PUMP_ON')">ON</button>
-                <button class="btn-off" onclick="sendControl('PUMP_OFF')">OFF</button>
+                <button class="btn-on  manual-btn" disabled onclick="sendControl('PUMP_ON')">ON</button>
+                <button class="btn-off manual-btn" disabled onclick="sendControl('PUMP_OFF')">OFF</button>
               </div>
             </div>
             <div class="actuator-card">
@@ -1049,8 +1415,8 @@ app.get('/', (req, res) => {
               <div class="actuator-name">Solenoid Valve</div>
               <div class="actuator-state off" id="act-valve-state">● Offline / CLOSED</div>
               <div class="actuator-btns">
-                <button class="btn-on"  onclick="sendControl('VALVE_ON')">OPEN</button>
-                <button class="btn-off" onclick="sendControl('VALVE_OFF')">CLOSE</button>
+                <button class="btn-on  manual-btn" disabled onclick="sendControl('VALVE_ON')">OPEN</button>
+                <button class="btn-off manual-btn" disabled onclick="sendControl('VALVE_OFF')">CLOSE</button>
               </div>
             </div>
             <div class="actuator-card">
@@ -1058,16 +1424,31 @@ app.get('/', (req, res) => {
               <div class="actuator-name">Peltier Cooler</div>
               <div class="actuator-state off" id="act-peltier-state">● Offline / OFF</div>
               <div class="actuator-btns">
-                <button class="btn-on"  onclick="sendControl('COOL_MAX')">ON MAX</button>
-                <button class="btn-off" onclick="sendControl('COOL_OFF')">OFF</button>
+                <button class="btn-on  manual-btn" disabled onclick="sendControl('COOL_MAX')">ON MAX</button>
+                <button class="btn-off manual-btn" disabled onclick="sendControl('COOL_OFF')">OFF</button>
               </div>
+            </div>
+            
+          </div>
+
+          <!-- Override controls — always available in Manual mode; resets available in both -->
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);margin-bottom:14px;">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Override Release</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button onclick="sendControl('reset_override')" style="padding:8px 16px;border-radius:6px;border:1.5px solid rgba(229,62,90,0.4);background:rgba(229,62,90,0.07);color:var(--danger);font-size:12px;font-weight:700;cursor:pointer;">↺ Release All Overrides</button>
+              <button onclick="sendControl('reset_pump')"     style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Pump</button>
+              <button onclick="sendControl('reset_uv')"       style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ UV</button>
+              <button onclick="sendControl('reset_peltier')"  style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Peltier</button>
+              <button onclick="sendControl('reset_valve')"    style="padding:8px 12px;border-radius:6px;border:1.5px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;">↺ Valve</button>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:8px;">
+              ⚠ Release buttons are always available. In Automated mode, sensors immediately resume control after release.
             </div>
           </div>
 
-
-          
           <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
             <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:10px;">Command Status</div>
+            <div class="stat-row"><span class="stat-label">Active mode</span><span class="stat-value" id="act-mode-display" style="color:var(--accent2)">Automated</span></div>
             <div class="stat-row"><span class="stat-label">Last command</span><span class="stat-value" id="act-last-cmd">—</span></div>
             <div class="stat-row"><span class="stat-label">Reply</span><span class="stat-value" id="act-last-reply">—</span></div>
             <div class="stat-row"><span class="stat-label">Serial port</span><span class="stat-value" id="act-serial" style="color:var(--muted)">—</span></div>
@@ -1168,6 +1549,603 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
+    <!-- ══ SCHEMATIC VIEW ══ -->
+    <div class="page-section" id="section-schematic">
+      <style>
+        .schem-wrap {
+          width: 100%; min-height: 580px;
+          background: var(--surface); border: 1px solid var(--border);
+          border-radius: 14px; box-shadow: var(--shadow);
+          display: grid;
+          grid-template-columns: 220px 1fr 220px;
+          grid-template-rows: auto;
+          gap: 0; overflow: hidden; position: relative;
+        }
+        /* ── Column headers ── */
+        .schem-col {
+          display: flex; flex-direction: column;
+          padding: 20px 14px; gap: 14px;
+        }
+        .schem-col.left  { background: #f0f7ff; border-right: 1px solid var(--border); }
+        .schem-col.center{ background: #fafbff; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding: 20px 24px; gap: 20px; }
+        .schem-col.right { background: #f0fff8; border-left: 1px solid var(--border); }
+        .schem-col-title {
+          font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
+          text-transform: uppercase; color: var(--muted);
+          text-align: center; margin-bottom: 4px;
+        }
+
+        /* ── Wire lines SVG overlay ── */
+        .schem-svg {
+          position: absolute; inset: 0; width: 100%; height: 100%;
+          pointer-events: none; z-index: 0;
+        }
+
+        /* ── Sensor cards ── */
+        .sensor-node {
+          background: var(--surface); border: 1.5px solid var(--border2);
+          border-radius: 10px; padding: 10px 12px;
+          display: flex; align-items: center; gap: 10px;
+          position: relative; z-index: 1;
+          box-shadow: 0 1px 4px rgba(11,30,61,0.06);
+          transition: box-shadow 0.15s;
+        }
+        .sensor-node:hover { box-shadow: var(--shadow); }
+        .sensor-icon-box {
+          width: 38px; height: 38px; border-radius: 8px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 18px;
+        }
+        .sensor-node-label { font-size: 11px; font-weight: 700; color: var(--navy); line-height: 1.2; }
+        .sensor-node-value { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-top: 3px; }
+        .sensor-node-status { font-size: 10px; font-weight: 600; margin-top: 2px; }
+        .sensor-node-status.ok   { color: var(--accent2); }
+        .sensor-node-status.warn { color: var(--warn); }
+        .sensor-node-status.bad  { color: var(--danger); }
+        .sensor-node-status.off  { color: var(--muted); }
+
+        /* ── Central boards ── */
+        .center-board {
+          width: 100%; border-radius: 12px; padding: 14px 16px;
+          position: relative; z-index: 1; text-align: center;
+        }
+        .esp32-board {
+          background: linear-gradient(135deg, #1a3260, #0b1e3d);
+          border: 2px solid #2a4a8a; color: #fff;
+        }
+        .raspi-board {
+          background: linear-gradient(135deg, #7c2d12, #450a0a);
+          border: 2px solid #b45309; color: #fff;
+        }
+        .relay-board {
+          background: linear-gradient(135deg, #1c2a3d, #111827);
+          border: 2px solid #374151; color: #e2e8f0;
+        }
+        .board-chip {
+          display: inline-block; width: 54px; height: 36px; border-radius: 4px;
+          margin-bottom: 8px; position: relative;
+        }
+        .esp32-board .board-chip { background: #22c55e; box-shadow: 0 0 12px rgba(34,197,94,0.4); }
+        .raspi-board .board-chip { background: #f59e0b; box-shadow: 0 0 12px rgba(245,158,11,0.4); }
+        .relay-board .board-chip { background: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.3); }
+        /* Chip pins */
+        .board-chip::before, .board-chip::after {
+          content: '';
+          position: absolute; top: 4px; bottom: 4px; width: 5px;
+          background: repeating-linear-gradient(to bottom, #888 0, #888 4px, transparent 4px, transparent 7px);
+        }
+        .board-chip::before { left: -5px; }
+        .board-chip::after  { right: -5px; }
+        .board-title { font-size: 12px; font-weight: 800; letter-spacing: 0.04em; }
+        .board-sub   { font-size: 9px; opacity: 0.7; margin-top: 2px; letter-spacing: 0.08em; font-family: var(--mono); }
+        /* GPIO pins strip */
+        .gpio-strip {
+          display: flex; justify-content: center; gap: 3px; margin-top: 8px; flex-wrap: wrap;
+        }
+        .gpio-pin {
+          width: 6px; height: 10px; border-radius: 2px; background: #fbbf24;
+          box-shadow: 0 0 4px rgba(251,191,36,0.5);
+        }
+
+        /* ── Relay module ── */
+        .relay-channels {
+          display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 10px;
+        }
+        .relay-ch {
+          height: 24px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15);
+          background: rgba(255,255,255,0.07);
+          display: flex; align-items: center; justify-content: center;
+          font-family: var(--mono); font-size: 8px; color: rgba(255,255,255,0.6);
+          transition: all 0.25s;
+        }
+        .relay-ch.active { background: rgba(34,197,94,0.3); border-color: #22c55e; color: #86efac; }
+
+        /* ── Actuator cards ── */
+        .actuator-node {
+          background: var(--surface); border: 1.5px solid var(--border2);
+          border-radius: 10px; padding: 10px 12px;
+          position: relative; z-index: 1;
+          box-shadow: 0 1px 4px rgba(11,30,61,0.06);
+          transition: box-shadow 0.15s;
+        }
+        .actuator-node:hover { box-shadow: var(--shadow); }
+        .actuator-node-top { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+        .actuator-icon-box {
+          width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center; font-size: 17px;
+        }
+        .actuator-node-label { font-size: 11px; font-weight: 700; color: var(--navy); }
+        .actuator-node-state { font-size: 10px; font-weight: 600; margin-top: 2px; }
+        .actuator-node-state.on  { color: var(--accent2); }
+        .actuator-node-state.off { color: var(--muted); }
+        /* Glow border when ON */
+        .actuator-node.is-on { border-color: var(--accent2); box-shadow: 0 0 0 2px rgba(0,179,126,0.15), var(--shadow); }
+        .actuator-node-btns { display: flex; gap: 5px; }
+        .schem-btn-on, .schem-btn-off {
+          flex: 1; padding: 5px 0; border-radius: 5px; border: 1.5px solid;
+          font-size: 10px; font-weight: 700; cursor: pointer; transition: all 0.15s;
+        }
+        .schem-btn-on  { border-color: rgba(0,179,126,0.4); background: rgba(0,179,126,0.08); color: var(--accent2); }
+        .schem-btn-on:hover  { background: rgba(0,179,126,0.18); }
+        .schem-btn-off { border-color: rgba(229,62,90,0.35); background: rgba(229,62,90,0.06); color: var(--danger); }
+        .schem-btn-off:hover { background: rgba(229,62,90,0.13); }
+        .schem-btn-on:disabled, .schem-btn-off:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        /* ── Camera status node ── */
+        .cam-status-badge {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 4px 9px; border-radius: 999px; font-size: 10px; font-weight: 700;
+          border: 1.5px solid; margin-top: 5px;
+        }
+        .cam-status-badge.detected { background: rgba(0,179,126,0.1); border-color: rgba(0,179,126,0.3); color: var(--accent2); }
+        .cam-status-badge.idle     { background: rgba(122,147,180,0.1); border-color: rgba(122,147,180,0.25); color: var(--muted); }
+        .cam-status-badge.scanning { background: rgba(0,112,243,0.08); border-color: rgba(0,112,243,0.3); color: var(--accent); }
+
+        /* ── Connection wire dots ── */
+        .wire-dot {
+          position: absolute; width: 8px; height: 8px; border-radius: 50%;
+          background: var(--accent); z-index: 2;
+          box-shadow: 0 0 6px rgba(0,112,243,0.5);
+        }
+
+        /* ── Legend ── */
+        .schem-legend {
+          display: flex; gap: 16px; flex-wrap: wrap;
+          padding: 10px 20px; border-top: 1px solid var(--border);
+          background: var(--surface2); font-size: 11px; color: var(--muted);
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-line { width: 20px; height: 2px; border-radius: 1px; }
+        .legend-line.serial { background: var(--accent); }
+        .legend-line.power  { background: var(--danger); }
+        .legend-line.gnd    { background: var(--muted); }
+        .legend-line.signal { background: var(--accent2); }
+
+        /* ── Auto mode note ── */
+        .schem-mode-note {
+          font-size: 11px; color: var(--muted); text-align: center;
+          padding: 8px 0 0; font-style: italic;
+        }
+      </style>
+
+      <div class="card" style="overflow:visible;">
+        <div class="card-header">
+          <div class="card-header-left">🔌 SYSTEM SCHEMATIC — Hardware Overview</div>
+          <span id="schemModeBadge" style="font-size:10px;padding:3px 10px;border-radius:999px;background:rgba(0,179,126,0.1);color:var(--accent2);border:1px solid rgba(0,179,126,0.3);">🤖 AUTOMATED</span>
+        </div>
+
+        <div class="schem-wrap" id="schemWrap">
+
+          <!-- ── Wire SVG overlay ── -->
+          <svg class="schem-svg" id="schemSvg" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrowB" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 Z" fill="rgba(0,112,243,0.5)"/>
+              </marker>
+              <marker id="arrowG" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 Z" fill="rgba(0,179,126,0.5)"/>
+              </marker>
+            </defs>
+            <!-- Horizontal lines from sensors to ESP32 center -->
+            <!-- These are decorative static lines; dynamic ones drawn by JS -->
+            <!-- Left sensors → ESP32 -->
+            <line x1="220" y1="120" x2="310" y2="220" stroke="rgba(0,112,243,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <line x1="220" y1="190" x2="310" y2="250" stroke="rgba(0,112,243,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <line x1="220" y1="270" x2="310" y2="280" stroke="rgba(0,112,243,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <line x1="220" y1="345" x2="310" y2="300" stroke="rgba(0,112,243,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <line x1="220" y1="415" x2="310" y2="320" stroke="rgba(245,158,11,0.25)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <!-- Right actuators ← Relay -->
+            <line x1="690" y1="110" x2="780" y2="120" stroke="rgba(0,179,126,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <line x1="690" y1="200" x2="780" y2="200" stroke="rgba(0,179,126,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <line x1="690" y1="295" x2="780" y2="290" stroke="rgba(0,179,126,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <line x1="690" y1="390" x2="780" y2="380" stroke="rgba(0,179,126,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+            <line x1="690" y1="480" x2="780" y2="460" stroke="rgba(245,158,11,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
+          </svg>
+
+          <!-- ══ LEFT — SENSORS ══ -->
+          <div class="schem-col left">
+            <div class="schem-col-title">📡 Sensors</div>
+
+            <!-- MQ-137 Ammonia -->
+            <div class="sensor-node">
+              <div class="sensor-icon-box" style="background:rgba(0,112,243,0.1);">
+                <!-- MQ sensor shape -->
+                <svg width="28" height="28" viewBox="0 0 28 28">
+                  <rect x="4" y="6" width="20" height="16" rx="3" fill="#1a3260"/>
+                  <circle cx="14" cy="14" r="5" fill="#3b82f6"/>
+                  <circle cx="14" cy="14" r="2.5" fill="#93c5fd"/>
+                  <rect x="6" y="22" width="3" height="4" rx="1" fill="#64748b"/>
+                  <rect x="12.5" y="22" width="3" height="4" rx="1" fill="#64748b"/>
+                  <rect x="19" y="22" width="3" height="4" rx="1" fill="#64748b"/>
+                </svg>
+              </div>
+              <div>
+                <div class="sensor-node-label">MQ-137 Ammonia</div>
+                <div class="sensor-node-value" id="schem-nh3">-- raw</div>
+                <div class="sensor-node-status off" id="schem-nh3-status">No data</div>
+              </div>
+            </div>
+
+            <!-- DS18B20 Temperature -->
+            <div class="sensor-node">
+              <div class="sensor-icon-box" style="background:rgba(0,179,126,0.1);">
+                <svg width="28" height="28" viewBox="0 0 28 28">
+                  <!-- probe body -->
+                  <rect x="11" y="2" width="6" height="18" rx="3" fill="#1a3260"/>
+                  <!-- bulb -->
+                  <circle cx="14" cy="22" r="5" fill="#ef4444"/>
+                  <circle cx="14" cy="22" r="2.5" fill="#fca5a5"/>
+                  <!-- mercury line -->
+                  <rect x="13" y="8" width="2" height="12" rx="1" fill="#fca5a5"/>
+                </svg>
+              </div>
+              <div>
+                <div class="sensor-node-label">DS18B20 Temp</div>
+                <div class="sensor-node-value" id="schem-temp">-- °C</div>
+                <div class="sensor-node-status off" id="schem-temp-status">No data</div>
+              </div>
+            </div>
+
+            <!-- Turbidity -->
+            <div class="sensor-node">
+              <div class="sensor-icon-box" style="background:rgba(245,158,11,0.1);">
+                <svg width="28" height="28" viewBox="0 0 28 28">
+                  <rect x="5" y="4" width="18" height="20" rx="3" fill="#1c2a3d"/>
+                  <!-- emitter -->
+                  <circle cx="9" cy="14" r="3" fill="#fbbf24"/>
+                  <!-- receiver -->
+                  <circle cx="19" cy="14" r="3" fill="#3b82f6"/>
+                  <!-- water drops -->
+                  <circle cx="14" cy="11" r="1.5" fill="rgba(147,197,253,0.6)"/>
+                  <circle cx="14" cy="17" r="1" fill="rgba(147,197,253,0.4)"/>
+                  <!-- legs -->
+                  <rect x="7"  y="24" width="2" height="3" fill="#64748b"/>
+                  <rect x="19" y="24" width="2" height="3" fill="#64748b"/>
+                </svg>
+              </div>
+              <div>
+                <div class="sensor-node-label">Turbidity</div>
+                <div class="sensor-node-value" id="schem-turb">-- NTU</div>
+                <div class="sensor-node-status off" id="schem-turb-status">No data</div>
+              </div>
+            </div>
+
+            <!-- Flow Sensor YF-S201 -->
+            <div class="sensor-node">
+              <div class="sensor-icon-box" style="background:rgba(6,182,212,0.1);">
+                <svg width="28" height="28" viewBox="0 0 28 28">
+                  <!-- body -->
+                  <rect x="5" y="8" width="18" height="12" rx="4" fill="#0e7490"/>
+                  <!-- pipe ends -->
+                  <rect x="2" y="11" width="4" height="6" rx="1" fill="#0891b2"/>
+                  <rect x="22" y="11" width="4" height="6" rx="1" fill="#0891b2"/>
+                  <!-- spinner -->
+                  <circle cx="14" cy="14" r="3.5" fill="#22d3ee"/>
+                  <line x1="14" y1="11" x2="14" y2="17" stroke="#0e7490" stroke-width="1.5"/>
+                  <line x1="11" y1="14" x2="17" y2="14" stroke="#0e7490" stroke-width="1.5"/>
+                  <!-- wire -->
+                  <rect x="12" y="20" width="4" height="5" rx="1" fill="#fbbf24"/>
+                </svg>
+              </div>
+              <div>
+                <div class="sensor-node-label">Flow Sensor YF-S201</div>
+                <div class="sensor-node-value" id="schem-flow">-- L/min</div>
+                <div class="sensor-node-status off" id="schem-flow-status">No data</div>
+              </div>
+            </div>
+
+            <!-- Pi Camera -->
+            <div class="sensor-node" style="border-color:rgba(245,158,11,0.4);background:rgba(245,158,11,0.03);">
+              <div class="sensor-icon-box" style="background:rgba(245,158,11,0.12);">
+                <svg width="28" height="28" viewBox="0 0 28 28">
+                  <rect x="3" y="7" width="22" height="16" rx="3" fill="#451a03"/>
+                  <rect x="5" y="9" width="18" height="12" rx="2" fill="#1c1917"/>
+                  <!-- lens rings -->
+                  <circle cx="14" cy="15" r="5" fill="#0f172a"/>
+                  <circle cx="14" cy="15" r="3.5" fill="#1e3a5f"/>
+                  <circle cx="14" cy="15" r="2" fill="#334155"/>
+                  <circle cx="14" cy="15" r="0.8" fill="#e2e8f0"/>
+                  <!-- ribbon connector -->
+                  <rect x="12" y="23" width="4" height="3" fill="#fbbf24"/>
+                </svg>
+              </div>
+              <div>
+                <div class="sensor-node-label">Pi Camera</div>
+                <div id="schem-cam-badge">
+                  <span class="cam-status-badge idle" id="schemCamBadge">◌ IDLE</span>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /left -->
+
+          <!-- ══ CENTER — ESP32 + RPi ══ -->
+          <div class="schem-col center">
+            <div class="schem-col-title">🖥 Control Units</div>
+
+            <!-- ESP32 -->
+            <div class="center-board esp32-board" style="width:100%;">
+              <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px;">
+                <div class="board-chip"></div>
+              </div>
+              <div class="board-title">ESP32 DevKit</div>
+              <div class="board-sub">ESPRESSIF · 240MHz · WiFi+BT</div>
+              <div class="gpio-strip">
+                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
+                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
+                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
+                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
+                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
+                <div class="gpio-pin"></div>
+              </div>
+              <div style="margin-top:10px;font-size:10px;opacity:0.65;font-family:var(--mono);">
+                Sensors · Relay Driver · Motor Driver
+              </div>
+              <div style="margin-top:6px;">
+                <span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(34,197,94,0.2);color:#86efac;border:1px solid rgba(34,197,94,0.3);" id="schemEsp32Status">● Offline</span>
+              </div>
+            </div>
+
+            <!-- Serial link arrow -->
+            <div style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--muted);">
+              <div style="height:28px;width:2px;background:linear-gradient(to bottom,rgba(0,112,243,0.6),rgba(245,158,11,0.6));border-radius:1px;"></div>
+              <span>USB Serial /dev/ttyUSB0</span>
+            </div>
+
+            <!-- Relay Module -->
+            <div class="center-board relay-board" style="width:100%;">
+              <div class="board-title" style="font-size:11px;">4-Channel Relay Module</div>
+              <div class="board-sub">Active LOW · 5V coil</div>
+              <div class="relay-channels" style="margin-top:10px;">
+                <div class="relay-ch" id="relay-ch1" title="UV Sterilizer">UV</div>
+                <div class="relay-ch" id="relay-ch2" title="Water Pump">PUMP</div>
+                <div class="relay-ch" id="relay-ch3" title="Solenoid Valve">VLVE</div>
+                <div class="relay-ch" id="relay-ch4" title="Peltier Cooler">PELT</div>
+              </div>
+              <div style="margin-top:8px;font-size:9px;opacity:0.55;font-family:var(--mono);">
+                GPIO4 · GPIO26 · GPIO14 · RPWM16
+              </div>
+            </div>
+
+            <!-- Serial link arrow to RPi -->
+            <div style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--muted);">
+              <div style="height:28px;width:2px;background:linear-gradient(to bottom,rgba(245,158,11,0.6),rgba(180,83,9,0.6));border-radius:1px;"></div>
+              <span>USB-C Serial → Raspberry Pi 5</span>
+            </div>
+
+            <!-- Raspberry Pi 5 -->
+            <div class="center-board raspi-board" style="width:100%;">
+              <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px;">
+                <div class="board-chip"></div>
+              </div>
+              <div class="board-title">Raspberry Pi 5</div>
+              <div class="board-sub">4GB · Python Backend · Node.js Frontend</div>
+              <div class="gpio-strip">
+                <div class="gpio-pin" style="background:#f97316;"></div>
+                <div class="gpio-pin" style="background:#f97316;"></div>
+                <div class="gpio-pin" style="background:#f97316;"></div>
+                <div class="gpio-pin" style="background:#f97316;"></div>
+                <div class="gpio-pin" style="background:#f97316;"></div>
+                <div class="gpio-pin" style="background:#f97316;"></div>
+                <div class="gpio-pin" style="background:#f97316;"></div>
+                <div class="gpio-pin" style="background:#f97316;"></div>
+              </div>
+              <div style="margin-top:10px;font-size:10px;opacity:0.65;font-family:var(--mono);">
+                Camera · AI Detection (Roboflow) · Dashboard
+              </div>
+              <div style="margin-top:6px;display:flex;gap:5px;justify-content:center;flex-wrap:wrap;">
+                <span style="font-size:9px;padding:2px 7px;border-radius:999px;background:rgba(251,191,36,0.2);color:#fde68a;border:1px solid rgba(251,191,36,0.3);">Python</span>
+                <span style="font-size:9px;padding:2px 7px;border-radius:999px;background:rgba(74,222,128,0.15);color:#86efac;border:1px solid rgba(74,222,128,0.25);">Node.js</span>
+                <span style="font-size:9px;padding:2px 7px;border-radius:999px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.25);">MongoDB</span>
+              </div>
+            </div>
+
+            <!-- A4988 Motor Driver -->
+            <div style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1.5px solid #334155;border-radius:10px;padding:12px;width:100%;text-align:center;position:relative;z-index:1;">
+              <div style="font-size:11px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">A4988 Stepper Driver</div>
+              <div style="font-size:9px;color:#64748b;font-family:var(--mono);margin-bottom:8px;">STEP:GPIO12 · DIR:GPIO2 · EN:GPIO13</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;">
+                <div style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:3px;font-size:9px;color:#fca5a5;font-family:var(--mono);">VMOT 12V</div>
+                <div style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.3);border-radius:4px;padding:3px;font-size:9px;color:#fde68a;font-family:var(--mono);">VDD 3.3V</div>
+                <div style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);border-radius:4px;padding:3px;font-size:9px;color:#86efac;font-family:var(--mono);">1/8 step</div>
+              </div>
+            </div>
+
+            <div class="schem-mode-note" id="schemModeNote">🤖 Automated — sensors control actuators</div>
+          </div><!-- /center -->
+
+          <!-- ══ RIGHT — ACTUATORS ══ -->
+          <div class="schem-col right">
+            <div class="schem-col-title">⚡ Actuators</div>
+
+            <!-- UV Sterilizer -->
+            <div class="actuator-node" id="schem-act-uv">
+              <div class="actuator-node-top">
+                <div class="actuator-icon-box" style="background:rgba(250,204,21,0.12);">
+                  <svg width="28" height="28" viewBox="0 0 28 28">
+                    <!-- tube -->
+                    <rect x="6" y="11" width="16" height="6" rx="3" fill="#e2e8f0"/>
+                    <rect x="8" y="13" width="12" height="2" rx="1" fill="#a5b4fc"/>
+                    <!-- glow when on — controlled via opacity -->
+                    <ellipse cx="14" cy="14" rx="10" ry="5" fill="rgba(167,139,250,0.2)" class="glow-uv" opacity="0"/>
+                    <!-- end caps -->
+                    <rect x="3" y="12" width="4" height="4" rx="1" fill="#94a3b8"/>
+                    <rect x="21" y="12" width="4" height="4" rx="1" fill="#94a3b8"/>
+                    <!-- rays -->
+                    <line x1="14" y1="6" x2="14" y2="2" stroke="#c4b5fd" stroke-width="1.5" class="glow-uv"/>
+                    <line x1="9"  y1="8" x2="6"  y2="5" stroke="#c4b5fd" stroke-width="1.5" class="glow-uv"/>
+                    <line x1="19" y1="8" x2="22" y2="5" stroke="#c4b5fd" stroke-width="1.5" class="glow-uv"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="actuator-node-label">UV Sterilizer</div>
+                  <div class="actuator-node-state off" id="schem-uv-state">● OFF</div>
+                </div>
+              </div>
+              <div class="actuator-node-btns">
+                <button class="schem-btn-on  schem-manual-btn" onclick="schemControl('UV_ON')"  disabled>ON</button>
+                <button class="schem-btn-off schem-manual-btn" onclick="schemControl('UV_OFF')" disabled>OFF</button>
+              </div>
+            </div>
+
+            <!-- Water Pump -->
+            <div class="actuator-node" id="schem-act-pump">
+              <div class="actuator-node-top">
+                <div class="actuator-icon-box" style="background:rgba(59,130,246,0.1);">
+                  <svg width="28" height="28" viewBox="0 0 28 28">
+                    <!-- body -->
+                    <circle cx="14" cy="14" r="9" fill="#1e40af"/>
+                    <circle cx="14" cy="14" r="6" fill="#2563eb"/>
+                    <!-- impeller -->
+                    <circle cx="14" cy="14" r="2" fill="#93c5fd"/>
+                    <line x1="14" y1="8"  x2="14" y2="12" stroke="#bfdbfe" stroke-width="2"/>
+                    <line x1="14" y1="16" x2="14" y2="20" stroke="#bfdbfe" stroke-width="2"/>
+                    <line x1="8"  y1="14" x2="12" y2="14" stroke="#bfdbfe" stroke-width="2"/>
+                    <line x1="16" y1="14" x2="20" y2="14" stroke="#bfdbfe" stroke-width="2"/>
+                    <!-- outlet -->
+                    <rect x="21" y="12" width="5" height="4" rx="1" fill="#1d4ed8"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="actuator-node-label">Submersible Pump</div>
+                  <div class="actuator-node-state off" id="schem-pump-state">● OFF</div>
+                </div>
+              </div>
+              <div class="actuator-node-btns">
+                <button class="schem-btn-on  schem-manual-btn" onclick="schemControl('PUMP_ON')"  disabled>ON</button>
+                <button class="schem-btn-off schem-manual-btn" onclick="schemControl('PUMP_OFF')" disabled>OFF</button>
+              </div>
+            </div>
+
+            <!-- Solenoid Valve -->
+            <div class="actuator-node" id="schem-act-valve">
+              <div class="actuator-node-top">
+                <div class="actuator-icon-box" style="background:rgba(148,163,184,0.12);">
+                  <svg width="28" height="28" viewBox="0 0 28 28">
+                    <!-- body -->
+                    <rect x="7" y="9" width="14" height="10" rx="2" fill="#374151"/>
+                    <!-- solenoid coil lines -->
+                    <line x1="9"  y1="11" x2="9"  y2="17" stroke="#6b7280" stroke-width="1"/>
+                    <line x1="11" y1="11" x2="11" y2="17" stroke="#6b7280" stroke-width="1"/>
+                    <line x1="13" y1="11" x2="13" y2="17" stroke="#6b7280" stroke-width="1"/>
+                    <line x1="15" y1="11" x2="15" y2="17" stroke="#6b7280" stroke-width="1"/>
+                    <line x1="17" y1="11" x2="17" y2="17" stroke="#6b7280" stroke-width="1"/>
+                    <line x1="19" y1="11" x2="19" y2="17" stroke="#6b7280" stroke-width="1"/>
+                    <!-- pipe in/out -->
+                    <rect x="2"  y="12" width="6" height="4" rx="1" fill="#4b5563"/>
+                    <rect x="20" y="12" width="6" height="4" rx="1" fill="#4b5563"/>
+                    <!-- plunger indicator -->
+                    <circle cx="14" cy="7" r="3" fill="#f59e0b"/>
+                    <rect x="13" y="7" width="2" height="5" fill="#d97706"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="actuator-node-label">Solenoid Valve</div>
+                  <div class="actuator-node-state off" id="schem-valve-state">● CLOSED</div>
+                </div>
+              </div>
+              <div class="actuator-node-btns">
+                <button class="schem-btn-on  schem-manual-btn" onclick="schemControl('VALVE_ON')"  disabled>OPEN</button>
+                <button class="schem-btn-off schem-manual-btn" onclick="schemControl('VALVE_OFF')" disabled>CLOSE</button>
+              </div>
+            </div>
+
+            <!-- Peltier Cooler -->
+            <div class="actuator-node" id="schem-act-peltier">
+              <div class="actuator-node-top">
+                <div class="actuator-icon-box" style="background:rgba(6,182,212,0.1);">
+                  <svg width="28" height="28" viewBox="0 0 28 28">
+                    <!-- TEC module body -->
+                    <rect x="5" y="8" width="18" height="12" rx="2" fill="#0e7490"/>
+                    <!-- ceramic plates -->
+                    <rect x="5" y="8"  width="18" height="3" rx="1" fill="#e2e8f0"/>
+                    <rect x="5" y="17" width="18" height="3" rx="1" fill="#1e3a5f"/>
+                    <!-- P-N elements -->
+                    <rect x="8"  y="11" width="3" height="6" rx="1" fill="#ef4444"/>
+                    <rect x="12.5" y="11" width="3" height="6" rx="1" fill="#3b82f6"/>
+                    <rect x="17" y="11" width="3" height="6" rx="1" fill="#ef4444"/>
+                    <!-- snowflake on cold side -->
+                    <text x="14" y="27" text-anchor="middle" font-size="7" fill="#93c5fd">❄</text>
+                  </svg>
+                </div>
+                <div>
+                  <div class="actuator-node-label">Peltier Cooler</div>
+                  <div class="actuator-node-state off" id="schem-peltier-state">● OFF</div>
+                </div>
+              </div>
+              <div class="actuator-node-btns">
+                <button class="schem-btn-on  schem-manual-btn" onclick="schemControl('COOL_MAX')" disabled>ON MAX</button>
+                <button class="schem-btn-off schem-manual-btn" onclick="schemControl('COOL_OFF')" disabled>OFF</button>
+              </div>
+            </div>
+
+            <!-- Stepper Motor -->
+            <div class="actuator-node" id="schem-act-motor">
+              <div class="actuator-node-top">
+                <div class="actuator-icon-box" style="background:rgba(245,158,11,0.1);">
+                  <svg width="28" height="28" viewBox="0 0 28 28">
+                    <!-- body -->
+                    <rect x="5" y="5" width="18" height="18" rx="3" fill="#1c2a3d"/>
+                    <!-- shaft -->
+                    <circle cx="14" cy="14" r="5" fill="#374151"/>
+                    <circle cx="14" cy="14" r="2.5" fill="#94a3b8"/>
+                    <rect x="14" y="2" width="2" height="5" rx="1" fill="#94a3b8"/>
+                    <!-- winding marks -->
+                    <rect x="5"  y="9"  width="3" height="2" rx="1" fill="#f59e0b"/>
+                    <rect x="5"  y="17" width="3" height="2" rx="1" fill="#f59e0b"/>
+                    <rect x="20" y="9"  width="3" height="2" rx="1" fill="#ef4444"/>
+                    <rect x="20" y="17" width="3" height="2" rx="1" fill="#ef4444"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="actuator-node-label">Stepper Motor</div>
+                  <div class="actuator-node-state off" id="schem-motor-state">● IDLE</div>
+                </div>
+              </div>
+              <div class="actuator-node-btns">
+                <button class="schem-btn-on" onclick="schemRunMotor('CW')"  style="border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.08);color:var(--warn);">▶ CW</button>
+                <button class="schem-btn-off" onclick="schemRunMotor('CCW')" style="border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.06);color:var(--warn);">◀ CCW</button>
+              </div>
+            </div>
+
+          </div><!-- /right -->
+
+        </div><!-- /schem-wrap -->
+
+        <!-- Legend -->
+        <div class="schem-legend">
+          <div class="legend-item"><div class="legend-line serial"></div><span>Serial / Signal</span></div>
+          <div class="legend-item"><div class="legend-line signal"></div><span>Actuator Output</span></div>
+          <div class="legend-item"><div class="legend-line power"></div><span>12V Power</span></div>
+          <div class="legend-item"><div class="legend-line gnd"></div><span>Common GND</span></div>
+          <div style="margin-left:auto;font-size:11px;color:var(--muted);">
+            ⚠ Switch to Manual mode in Actuators page to enable controls
+          </div>
+        </div>
+
+      </div>
+    </div>
+
     <!-- ══ EVENT LOG ══ -->
     <div class="page-section" id="section-eventlog">
       <div class="card">
@@ -1195,7 +2173,11 @@ app.get('/', (req, res) => {
   });
 
   // ── Nav ───────────────────────────────────────────────────────────────────
-  const pageTitles = { livefeed:'Live Feed', sensors:'Water Sensors', actuators:'Actuators', schedule:'Feeding Schedule', motorzones:'Motor Zones', alerts:'Alerts', eventlog:'Event Log' };
+  const pageTitles = {
+    livefeed:'Live Feed', sensors:'Water Sensors', actuators:'Actuators',
+    schedule:'Feeding Schedule', motorzones:'Motor Zones', alerts:'Alerts', eventlog:'Event Log',
+    schematic:'Schematic View'
+  };
   function showSection(id) {
     document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1451,28 +2433,28 @@ app.get('/', (req, res) => {
       const s=await res.json();
 
       esp32Connected=!!s.connected;
+
+      // Sync mode state if server reports it
+      if (typeof s.auto_mode === 'boolean') applyModeUI(s.auto_mode);
+
       const dot=document.getElementById('esp32Dot');
       const stEl=document.getElementById('esp32State');
       dot.className='conn-dot '+(esp32Connected?'online':'offline');
       stEl.textContent=esp32Connected?'Online':'Offline';
       stEl.style.color=esp32Connected?'var(--accent2)':'var(--danger)';
 
-      // No-connection banners
       const b1=document.getElementById('noConnBanner');
       const b2=document.getElementById('noConnBanner2');
       if(b1) b1.className='no-conn-banner'+(esp32Connected?'':' visible');
       if(b2) b2.className='no-conn-banner'+(esp32Connected?'':' visible');
 
       const nh3=s.ammonia_raw, tmp=s.temperature_c, trb=s.turbidity_ntu, flw=s.flow_lpm;
-      const hasData=esp32Connected&&nh3!==null&&tmp!==null;
 
-      // Metric values
       document.getElementById('m-ammonia').textContent   = nh3!==null?nh3:'--';
       document.getElementById('m-temp').textContent      = tmp!==null?parseFloat(tmp).toFixed(1):'--';
       document.getElementById('m-turbidity').textContent = trb!==null?trb:'--';
       document.getElementById('m-flow').textContent      = flw!==null?parseFloat(flw).toFixed(2):'--';
 
-      // Badges
       function setBadge(id, val, ok, warn, badTxt, warnTxt, okTxt, noDataTxt='— No data') {
         const el=document.getElementById(id);
         if (val===null||val===undefined||!esp32Connected) { el.className='metric-badge off'; el.textContent=noDataTxt; return; }
@@ -1480,7 +2462,7 @@ app.get('/', (req, res) => {
         else if (val>ok) { el.className='metric-badge warn'; el.textContent='⚡ '+warnTxt; }
         else              { el.className='metric-badge ok';   el.textContent='✓ '+okTxt; }
       }
-      setBadge('m-ammonia-badge',  nh3, 2000, 2000, 'CRITICAL', 'WARNING — Moderate', 'Normal — LOW');
+      setBadge('m-ammonia-badge',  nh3, 5000, 5000, 'CRITICAL', 'WARNING — High', 'Normal — LOW');
       setBadge('m-temp-badge',     tmp, 28,   28,   'TOO HOT',  'WARNING — Warm',     'Within range — '+parseFloat(tmp||0).toFixed(1)+'°C');
       setBadge('m-turbidity-badge',trb, 2000, 2000, 'CLOUDY',   'Slightly cloudy',    'Clear');
 
@@ -1490,9 +2472,8 @@ app.get('/', (req, res) => {
       else if (flw>0) { flwEl.className='metric-badge ok'; flwEl.textContent='✓ Flowing'; }
       else { flwEl.className='metric-badge warn'; flwEl.textContent='⚡ No flow'; }
 
-      // Sensors page
       document.getElementById('s-ammonia-raw').textContent    = nh3!==null?nh3+' raw':'-- (no data)';
-      document.getElementById('s-ammonia-status').textContent  = !esp32Connected?'ESP32 offline':nh3>2500?'CRITICAL':nh3>2000?'WARNING — Moderate':'Normal — LOW';
+      document.getElementById('s-ammonia-status').textContent  = !esp32Connected?'ESP32 offline':nh3>5500?'CRITICAL':nh3>5000?'WARNING — High':'Normal — LOW';
       document.getElementById('s-ammonia-status').style.color  = !esp32Connected?'var(--muted)':nh3>2500?'var(--danger)':nh3>2000?'var(--warn)':'var(--accent2)';
       document.getElementById('s-temp-val').textContent        = tmp!==null?parseFloat(tmp).toFixed(1)+' °C':'-- (no data)';
       document.getElementById('s-temp-status').textContent     = !esp32Connected?'ESP32 offline':tmp>30?'CRITICAL — Too hot':tmp>28?'WARNING — Warm':'Within range';
@@ -1506,11 +2487,11 @@ app.get('/', (req, res) => {
       document.getElementById('s-total-val').textContent       = s.total_liters!==null?(parseFloat(s.total_liters||0).toFixed(3)+' L'):'--';
       document.getElementById('s-valve-state').textContent     = !esp32Connected?'Offline':(s.valve_state||'--');
 
-      // Actuators
       const pumpOn=(s.pump_state||'').toUpperCase()==='ON';
       const uvOn=(s.uv_state||'').toUpperCase()==='ON';
       const valveOn=(s.valve_state||'').toUpperCase()==='OPEN';
       const peltOn=(s.peltier_state||'').toUpperCase()==='ON';
+      
 
       function setActState(id,on,onTxt,offTxt) {
         const el=document.getElementById(id);
@@ -1521,12 +2502,13 @@ app.get('/', (req, res) => {
       setActState('act-pump-state',  pumpOn, 'ON',   'OFF');
       setActState('act-valve-state', valveOn,'OPEN', 'CLOSED');
       setActState('act-peltier-state',peltOn,'ON',   'OFF');
+      
 
       const lc=s.last_command;
       document.getElementById('act-last-cmd').textContent  =lc?(typeof lc==='string'?lc:(lc.action||'--').toUpperCase()):'—';
       document.getElementById('act-last-reply').textContent=s.last_reply||'—';
       document.getElementById('act-serial').textContent    =s.serial_port||'—';
-
+      updateSchematic(s, { scanning: isScanningState, detected: isDetected });
     } catch(_) {}
   }
 
@@ -1637,6 +2619,135 @@ app.get('/', (req, res) => {
     try { const res=await fetch(\`\${API_BASE}/api/detection/status\`); const data=await res.json(); syncDetectionUI(!!data.paused); } catch(_) {}
   }
 
+  // ── MODE MANAGEMENT ───────────────────────────────────────────────────────
+  let currentAutoMode = true;
+
+  function applyModeUI(isAuto) {
+    if (currentAutoMode === isAuto) return; // no-op if unchanged
+    currentAutoMode = isAuto;
+
+    const banner    = document.getElementById('modeBanner');
+    const icon      = document.getElementById('modeBannerIcon');
+    const title     = document.getElementById('modeBannerTitle');
+    const desc      = document.getElementById('modeBannerDesc');
+    const btn       = document.getElementById('modeSwitchBtn');
+    const badge     = document.getElementById('modeBadgeHeader');
+    const grid      = document.getElementById('actuatorGrid');
+    const modeDisp  = document.getElementById('act-mode-display');
+    const topPill   = document.getElementById('topbarModePill');
+    const topIcon   = document.getElementById('topbarModeIcon');
+    const topLabel  = document.getElementById('topbarModeLabel');
+
+    if (isAuto) {
+      banner.className = 'mode-banner auto';
+      icon.textContent  = '🤖';
+      title.textContent = 'Automated Mode';
+      desc.textContent  = 'Actuators are fully controlled by ESP32 sensor readings. Manual buttons are locked — switch to Manual to override.';
+      btn.className     = 'mode-switch-btn to-manual';
+      btn.textContent   = '⚡ Switch to Manual';
+      badge.style.background  = 'rgba(0,179,126,0.1)';
+      badge.style.color       = 'var(--accent2)';
+      badge.style.borderColor = 'rgba(0,179,126,0.3)';
+      badge.textContent       = '🤖 AUTOMATED';
+      grid.classList.add('locked');
+      if (modeDisp) { modeDisp.textContent = 'Automated'; modeDisp.style.color = 'var(--accent2)'; }
+      topPill.className  = 'mode-pill';
+      topIcon.textContent  = '🤖';
+      topLabel.textContent = 'Auto';
+    } else {
+      banner.className = 'mode-banner manual';
+      icon.textContent  = '🕹️';
+      title.textContent = 'Manual Mode';
+      desc.textContent  = 'You have full control over all actuators. ESP32 sensor-driven automation is suspended for overridden devices.';
+      btn.className     = 'mode-switch-btn to-auto';
+      btn.textContent   = '🤖 Restore Automation';
+      badge.style.background  = 'rgba(245,158,11,0.1)';
+      badge.style.color       = 'var(--warn)';
+      badge.style.borderColor = 'rgba(245,158,11,0.35)';
+      badge.textContent       = '🕹️ MANUAL';
+      grid.classList.remove('locked');
+      if (modeDisp) { modeDisp.textContent = 'Manual Override'; modeDisp.style.color = 'var(--warn)'; }
+      topPill.className  = 'mode-pill manual';
+      topIcon.textContent  = '🕹️';
+      topLabel.textContent = 'Manual';
+    }
+
+    // Enable / disable manual-btn elements
+    document.querySelectorAll('.manual-btn').forEach(btn => {
+      btn.disabled = isAuto;
+    });
+  }
+
+  async function toggleMode() {
+    const btn = document.getElementById('modeSwitchBtn');
+    btn.disabled = true;
+    try {
+      const res  = await fetch(\`\${API_BASE}/api/water/mode\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_mode: !currentAutoMode })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Force re-apply even if same value
+        const prev = currentAutoMode;
+        currentAutoMode = !data.auto_mode; // flip so applyModeUI sees a change
+        applyModeUI(data.auto_mode);
+        const msg = data.auto_mode
+          ? '🤖 Automated mode restored — ESP32 sensors back in control'
+          : '🕹️ Manual mode active — you have full control';
+        addLog(msg, data.auto_mode ? 'ok' : 'warn');
+        showToast(msg, data.auto_mode ? 'success' : 'warning', 4000);
+      }
+    } catch (e) {
+      showToast('Mode switch failed — check connection', 'error', 3500);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function fetchMode() {
+    try {
+      const res  = await fetch(\`\${API_BASE}/api/water/mode\`);
+      const data = await res.json();
+      currentAutoMode = !data.auto_mode; // prime for applyModeUI diff check
+      applyModeUI(!!data.auto_mode);
+    } catch (_) {}
+  }
+
+  // ── Water control ─────────────────────────────────────────────────────────
+  async function sendControl(action) {
+    const isResetCmd = action.toLowerCase().startsWith('reset');
+
+    // Block non-reset actuator commands if currently in auto mode
+    if (currentAutoMode && !isResetCmd) {
+      showToast('⚠️ Switch to Manual mode first', 'warning', 3500);
+      // Briefly flash the banner to draw attention
+      const banner = document.getElementById('modeBanner');
+      banner.style.outline = '2px solid var(--warn)';
+      setTimeout(() => { banner.style.outline = ''; }, 1200);
+      return;
+    }
+
+    try {
+      const res = await fetch(\`\${API_BASE}/api/water/control\`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        showToast('Server blocked: ' + (data.error || action), 'error', 3500);
+        return;
+      }
+      addLog('⚙ Control: ' + action, 'ok');
+      showToast('⚙ Sent: ' + action, 'success', 2500);
+      setTimeout(pollWater, 800);
+    } catch (_) {
+      showToast('Command failed — check connection', 'error', 3000);
+    }
+  }
+
   // ── Motor run ─────────────────────────────────────────────────────────────
   async function runMotorManual() {
     const steps=parseInt(document.getElementById('manualSteps').value)||200;
@@ -1662,15 +2773,6 @@ app.get('/', (req, res) => {
     finally { setTimeout(()=>{ btn.disabled=false; btn.textContent='🍤 Feed Now'; },2000); }
   });
 
-  // ── Water control ─────────────────────────────────────────────────────────
-  async function sendControl(action) {
-    try {
-      await fetch(\`\${API_BASE}/api/water/control\`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
-      addLog('⚙ Control: '+action,'ok'); showToast('⚙ Sent: '+action,'success',2500);
-      setTimeout(pollWater,800);
-    } catch(_) { showToast('Command failed','error',3000); }
-  }
-
   // ── Save motor ────────────────────────────────────────────────────────────
   function saveMotorSettings() {
     const boundary=parseInt(document.getElementById('zoneBoundaryInput').value)||320;
@@ -1695,6 +2797,141 @@ app.get('/', (req, res) => {
     .catch(()=>{document.getElementById('scheduleStatus').textContent='Error';});
   }
 
+  // ── Schematic View sync ───────────────────────────────────────────────────
+  function updateSchematic(waterStatus, detectionStatus) {
+    if (!waterStatus) return;
+    const s = waterStatus;
+    const esp = !!s.connected;
+
+    // ESP32 status badge
+    const espBadge = document.getElementById('schemEsp32Status');
+    if (espBadge) {
+      espBadge.textContent = esp ? '● Online' : '● Offline';
+      espBadge.style.background = esp ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.15)';
+      espBadge.style.color = esp ? '#86efac' : '#fca5a5';
+      espBadge.style.borderColor = esp ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)';
+    }
+
+    // Sensor values
+    const nh3 = s.ammonia_raw, tmp = s.temperature_c, trb = s.turbidity_ntu, flw = s.flow_lpm;
+    const nd = el => { if(el){el.textContent='No data'; el.className='sensor-node-status off';} };
+
+    const nh3El = document.getElementById('schem-nh3');
+    const nh3St = document.getElementById('schem-nh3-status');
+    if (nh3El) nh3El.textContent = nh3 !== null ? nh3 + ' raw' : '-- raw';
+    if (nh3St) {
+      if (!esp || nh3 === null) { nh3St.textContent='No data'; nh3St.className='sensor-node-status off'; }
+      else if (nh3 > 5500) { nh3St.textContent='⚠ CRITICAL'; nh3St.className='sensor-node-status bad'; }
+      else if (nh3 > 5000) { nh3St.textContent='⚡ WARNING'; nh3St.className='sensor-node-status warn'; }
+      else { nh3St.textContent='✓ Normal'; nh3St.className='sensor-node-status ok'; }
+    }
+
+    const tmpEl = document.getElementById('schem-temp');
+    const tmpSt = document.getElementById('schem-temp-status');
+    if (tmpEl) tmpEl.textContent = tmp !== null ? parseFloat(tmp).toFixed(1) + ' °C' : '-- °C';
+    if (tmpSt) {
+      if (!esp || tmp === null) { tmpSt.textContent='No data'; tmpSt.className='sensor-node-status off'; }
+      else if (tmp > 30) { tmpSt.textContent='⚠ TOO HOT'; tmpSt.className='sensor-node-status bad'; }
+      else if (tmp > 28) { tmpSt.textContent='⚡ WARM'; tmpSt.className='sensor-node-status warn'; }
+      else { tmpSt.textContent='✓ Normal'; tmpSt.className='sensor-node-status ok'; }
+    }
+
+    const trbEl = document.getElementById('schem-turb');
+    const trbSt = document.getElementById('schem-turb-status');
+    if (trbEl) trbEl.textContent = trb !== null ? trb + ' NTU' : '-- NTU';
+    if (trbSt) {
+      if (!esp || trb === null) { trbSt.textContent='No data'; trbSt.className='sensor-node-status off'; }
+      else if (trb > 2500) { trbSt.textContent='⚠ CLOUDY'; trbSt.className='sensor-node-status bad'; }
+      else if (trb > 2000) { trbSt.textContent='⚡ Slightly cloudy'; trbSt.className='sensor-node-status warn'; }
+      else { trbSt.textContent='✓ Clear'; trbSt.className='sensor-node-status ok'; }
+    }
+
+    const flwEl = document.getElementById('schem-flow');
+    const flwSt = document.getElementById('schem-flow-status');
+    if (flwEl) flwEl.textContent = flw !== null ? parseFloat(flw).toFixed(2) + ' L/min' : '-- L/min';
+    if (flwSt) {
+      if (!esp || flw === null) { flwSt.textContent='No data'; flwSt.className='sensor-node-status off'; }
+      else if (flw > 0) { flwSt.textContent='✓ Flowing'; flwSt.className='sensor-node-status ok'; }
+      else { flwSt.textContent='⚡ No flow'; flwSt.className='sensor-node-status warn'; }
+    }
+
+    // Camera / detection status
+    const camBadge = document.getElementById('schemCamBadge');
+    if (camBadge && detectionStatus) {
+      if (detectionStatus.scanning) { camBadge.textContent='⟳ SCANNING'; camBadge.className='cam-status-badge scanning'; }
+      else if (detectionStatus.detected) { camBadge.textContent='🦞 CRAYFISH DETECTED'; camBadge.className='cam-status-badge detected'; }
+      else { camBadge.textContent='◌ No crayfish'; camBadge.className='cam-status-badge idle'; }
+    }
+
+    // Actuator states
+    const pumpOn   = (s.pump_state||'').toUpperCase()==='ON';
+    const uvOn     = (s.uv_state||'').toUpperCase()==='ON';
+    const valveOn  = (s.valve_state||'').toUpperCase()==='OPEN';
+    const peltOn   = (s.peltier_state||'').toUpperCase()==='ON';
+
+    function setActNode(cardId, stateId, on, onTxt, offTxt) {
+      const card  = document.getElementById(cardId);
+      const state = document.getElementById(stateId);
+      if (card) card.className = 'actuator-node' + (esp && on ? ' is-on' : '');
+      if (state) {
+        state.textContent = esp ? (on ? '● '+onTxt : '● '+offTxt) : '● Offline';
+        state.className   = 'actuator-node-state ' + (esp && on ? 'on' : 'off');
+      }
+    }
+    setActNode('schem-act-uv',     'schem-uv-state',     uvOn,   'ON',   'OFF');
+    setActNode('schem-act-pump',   'schem-pump-state',   pumpOn, 'ON',   'OFF');
+    setActNode('schem-act-valve',  'schem-valve-state',  valveOn,'OPEN', 'CLOSED');
+    setActNode('schem-act-peltier','schem-peltier-state',peltOn, 'ON',   'OFF');
+
+    // Relay channel highlights
+    const rch = [
+      { id:'relay-ch1', on: uvOn   },
+      { id:'relay-ch2', on: pumpOn },
+      { id:'relay-ch3', on: valveOn},
+      { id:'relay-ch4', on: peltOn }
+    ];
+    rch.forEach(r => {
+      const el = document.getElementById(r.id);
+      if (el) el.className = 'relay-ch' + (esp && r.on ? ' active' : '');
+    });
+
+    // Mode badge + note
+    const mb   = document.getElementById('schemModeBadge');
+    const note = document.getElementById('schemModeNote');
+    if (mb) {
+      if (currentAutoMode) {
+        mb.textContent='🤖 AUTOMATED'; mb.style.color='var(--accent2)';
+        mb.style.background='rgba(0,179,126,0.1)'; mb.style.borderColor='rgba(0,179,126,0.3)';
+      } else {
+        mb.textContent='🕹️ MANUAL'; mb.style.color='var(--warn)';
+        mb.style.background='rgba(245,158,11,0.1)'; mb.style.borderColor='rgba(245,158,11,0.3)';
+      }
+    }
+    if (note) note.textContent = currentAutoMode
+      ? '🤖 Automated — sensors control actuators'
+      : '🕹️ Manual — dashboard has full control';
+
+    // Enable/disable schem actuator buttons based on mode
+    document.querySelectorAll('.schem-manual-btn').forEach(b => { b.disabled = currentAutoMode; });
+  }
+
+  // Schematic control (proxies to main sendControl)
+  function schemControl(action) { sendControl(action); }
+
+  async function schemRunMotor(dir) {
+    const stEl = document.getElementById('schem-motor-state');
+    if (stEl) { stEl.textContent='● Running…'; stEl.className='actuator-node-state warn'; }
+    try {
+      const res  = await fetch(\`\${API_BASE}/api/motor/run\`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({steps:200,direction:dir})});
+      const data = await res.json();
+      if (data.ok) {
+        if (stEl) { stEl.textContent='● Done ✓'; stEl.className='actuator-node-state on'; }
+        showToast(\`⚙ Motor: 200 steps \${dir}\`,'success',2500);
+        setTimeout(()=>{ if(stEl){stEl.textContent='● IDLE';stEl.className='actuator-node-state off';} },2500);
+      }
+    } catch(_) { if(stEl){stEl.textContent='● Error';stEl.className='actuator-node-state bad';} }
+  }
+
   // ── FPS / Clock ───────────────────────────────────────────────────────────
   setInterval(()=>{ document.getElementById('fpsBadge').textContent=fpsCounter+' FPS'; fpsCounter=0; },1000);
   setInterval(()=>{ document.getElementById('camTime').textContent=new Date().toTimeString().slice(0,8); },1000);
@@ -1703,12 +2940,15 @@ app.get('/', (req, res) => {
   addLog('System initializing…','');
   const saved=localStorage.getItem('tunnel_url')||'';
   if (saved) document.getElementById('tunnelInput').value=saved;
+
   fetchDetectionState();
+  fetchMode();           // load current auto/manual mode from server
   fetchFrame();
   pollStatus();
   pollWater();
   fetchHistory();
   fetchAlerts();
+
   setInterval(pollStatus,  2000);
   setInterval(pollWater,   2500);
   setInterval(fetchHistory,15000);
@@ -1732,7 +2972,7 @@ app.get('/status', (req, res) => {
     }
     try {
         const data = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
-        data.zone_boundary   = cfg.motor_zone_boundary || 320;
+        data.zone_boundary    = cfg.motor_zone_boundary || 320;
         data.detection_paused = detectionPaused;
         res.json(data);
     } catch (_) {
