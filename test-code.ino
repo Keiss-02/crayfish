@@ -18,6 +18,12 @@
 #define DIR_PIN              2
 #define ENABLE_PIN          13
 
+
+// Add after stepDelay declaration:
+String uvState      = "OFF";
+String pumpState    = "OFF";
+String peltierState = "OFF";
+String valveState   = "CLOSED";
 int stepDelay = 2000;
 
 OneWire oneWire(DS18B20_PIN);
@@ -78,11 +84,16 @@ void loop() {
     pulseCount = 0;
     attachInterrupt(digitalPinToInterrupt(FLOW_PIN), pulseCounter, FALLING);
 
-    Serial.print("TURBIDITY:"); Serial.print(turbidity);
-    Serial.print(" | NH3:");    Serial.print(ammonia);
-    Serial.print(" | TEMP:");   Serial.print(temp, 1);
-    Serial.print(" | FLOW:");   Serial.print(flow, 2);
-    Serial.println("L/min");
+   // Replace the existing Serial.print block with:
+Serial.print("TURBIDITY:"); Serial.print(turbidity);
+Serial.print(" | NH3:");    Serial.print(ammonia);
+Serial.print(" | TEMP:");   Serial.print(temp, 1);
+Serial.print(" | FLOW:");   Serial.print(flow, 2);
+Serial.print("L/min");
+Serial.print(" | UV:");     Serial.print(uvState);
+Serial.print(" | PUMP:");   Serial.print(pumpState);
+Serial.print(" | PELTIER:");Serial.print(peltierState);
+Serial.print(" | VALVE:");  Serial.println(valveState);
   }
 
   // Commands
@@ -90,25 +101,25 @@ void loop() {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
 
-    if (cmd == "UV_ON")  { digitalWrite(UV_RELAY_PIN, LOW);  Serial.println("OK:UV_ON");  }
-    if (cmd == "UV_OFF") { digitalWrite(UV_RELAY_PIN, HIGH); Serial.println("OK:UV_OFF"); }
+    if (cmd == "UV_ON")  { digitalWrite(UV_RELAY_PIN, LOW);  uvState = "ON";     Serial.println("OK:UV_ON");  }
+if (cmd == "UV_OFF") { digitalWrite(UV_RELAY_PIN, HIGH); uvState = "OFF";    Serial.println("OK:UV_OFF"); }
 
-    if (cmd == "VALVE_ON")  { digitalWrite(SOLENOID_RELAY_PIN, HIGH); Serial.println("OK:VALVE_ON");  }
-    if (cmd == "VALVE_OFF") { digitalWrite(SOLENOID_RELAY_PIN, LOW);  Serial.println("OK:VALVE_OFF"); }
+if (cmd == "VALVE_ON")  { digitalWrite(SOLENOID_RELAY_PIN, HIGH); valveState = "OPEN";   Serial.println("OK:VALVE_ON");  }
+if (cmd == "VALVE_OFF") { digitalWrite(SOLENOID_RELAY_PIN, LOW);  valveState = "CLOSED"; Serial.println("OK:VALVE_OFF"); }
 
-    if (cmd == "PUMP_ON")  { digitalWrite(PUMP_RELAY_PIN, LOW);  Serial.println("OK:PUMP_ON");  }
-    if (cmd == "PUMP_OFF") { digitalWrite(PUMP_RELAY_PIN, HIGH); Serial.println("OK:PUMP_OFF"); }
+if (cmd == "PUMP_ON")  { digitalWrite(PUMP_RELAY_PIN, LOW);  pumpState = "ON";  Serial.println("OK:PUMP_ON");  }
+if (cmd == "PUMP_OFF") { digitalWrite(PUMP_RELAY_PIN, HIGH); pumpState = "OFF"; Serial.println("OK:PUMP_OFF"); }
 
-    if (cmd == "PELTIER_ON")  {
-      analogWrite(RPWM, 255); analogWrite(LPWM, 0);
-      digitalWrite(CIRC_PUMP_RELAY_PIN, LOW);
-      Serial.println("OK:PELTIER_ON");
-    }
-    if (cmd == "PELTIER_OFF") {
-      analogWrite(RPWM, 0); analogWrite(LPWM, 0);
-      digitalWrite(CIRC_PUMP_RELAY_PIN, HIGH);
-      Serial.println("OK:PELTIER_OFF");
-    }
+if (cmd == "PELTIER_ON" || cmd == "COOL_MAX") {
+  analogWrite(RPWM, 255); analogWrite(LPWM, 0);
+  digitalWrite(CIRC_PUMP_RELAY_PIN, LOW);
+  peltierState = "ON"; Serial.println("OK:PELTIER_ON");
+}
+if (cmd == "PELTIER_OFF" || cmd == "COOL_OFF") {
+  analogWrite(RPWM, 0); analogWrite(LPWM, 0);
+  digitalWrite(CIRC_PUMP_RELAY_PIN, HIGH);
+  peltierState = "OFF"; Serial.println("OK:PELTIER_OFF");
+}
 
     if (cmd == "MOVE_CW")  {
       digitalWrite(DIR_PIN, HIGH); digitalWrite(ENABLE_PIN, LOW);

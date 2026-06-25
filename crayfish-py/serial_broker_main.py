@@ -303,7 +303,7 @@ def esp32_ping():
 def send_esp32_move(steps=None, direction=None):
     steps = int(steps or ESP32_STEPS)
     direction = (direction or ESP32_DIRECTION).upper()
-    command = f"MOVE_{direction}"   # sends MOVE_CW or MOVE_CCW
+    command = f"MOVE {steps} {direction}"
     return send_raw_command(command, expect_reply_lines=2, label="MOTOR")
 
 
@@ -311,7 +311,7 @@ def send_water_command(action, value=None):
     # If already a raw ESP32 command string, send directly
     raw_commands = {
         "UV_ON", "UV_OFF", "VALVE_ON", "VALVE_OFF",
-        "PELTIER_ON", "PELTIER_OFF", "PUMP_ON", "PUMP_OFF",
+        "COOL_MAX", "COOL_OFF", "PUMP_ON", "PUMP_OFF",
         "RESET_OVERRIDE", "RESET_PUMP", "RESET_UV",
         "RESET_PELTIER", "RESET_VALVE", "CIRC_PUMP_ON", "CIRC_PUMP_OFF"
     }

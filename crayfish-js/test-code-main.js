@@ -428,234 +428,6 @@ app.post('/api/test/command', (req, res) => {
   res.json({ ok: true, cmd });
 });
 
-app.get('/test', (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CrayCheck · Manual Test</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 24px; }
-    h1 { font-size: 20px; font-weight: 700; color: #f8fafc; margin-bottom: 4px; }
-    .sub { font-size: 12px; color: #64748b; margin-bottom: 24px; }
-    .tunnel-bar { display: flex; gap: 8px; margin-bottom: 24px; align-items: center; }
-    .tunnel-bar input { flex: 1; padding: 8px 12px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 12px; outline: none; }
-    .tunnel-bar button { padding: 8px 16px; background: #3b82f6; border: none; border-radius: 8px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
-    .sensors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-    .sensor-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
-    .sensor-label { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
-    .sensor-value { font-size: 24px; font-weight: 700; color: #f8fafc; }
-    .sensor-unit { font-size: 12px; color: #64748b; margin-left: 3px; }
-    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
-    .act-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
-    .act-name { font-size: 13px; font-weight: 600; color: #f8fafc; margin-bottom: 4px; }
-    .act-state { font-size: 11px; font-weight: 600; margin-bottom: 12px; color: #64748b; }
-    .act-state.on { color: #22c55e; }
-    .btns { display: flex; gap: 8px; }
-    .btn-on { flex: 1; padding: 8px; border: 1.5px solid #22c55e; background: rgba(34,197,94,0.1); color: #22c55e; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
-    .btn-off { flex: 1; padding: 8px; border: 1.5px solid #ef4444; background: rgba(239,68,68,0.1); color: #ef4444; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
-    .btn-on:hover { background: rgba(34,197,94,0.2); }
-    .btn-off:hover { background: rgba(239,68,68,0.2); }
-    .motor-btns { display: flex; gap: 8px; }
-    .btn-motor { flex: 1; padding: 8px; border: 1.5px solid #f59e0b; background: rgba(245,158,11,0.1); color: #f59e0b; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
-    .btn-motor:hover { background: rgba(245,158,11,0.2); }
-    .log-box { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
-    .log-title { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
-    .log-area { font-family: monospace; font-size: 11px; color: #94a3b8; height: 200px; overflow-y: auto; line-height: 1.8; }
-    .log-entry { display: flex; gap: 10px; }
-    .log-time { color: #3b82f6; flex-shrink: 0; }
-    .log-ok { color: #22c55e; }
-    .log-err { color: #ef4444; }
-    .log-info { color: #94a3b8; }
-    .conn-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 8px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; font-size: 12px; }
-    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
-    .conn-dot.on { background: #22c55e; }
-    .conn-dot.off { background: #ef4444; }
-  </style>
-</head>
-<body>
-  <h1>🦞 CrayCheck — Manual Test Page</h1>
-  <div class="sub">Group 6 · BSIT-S-3A-T · TUP Taguig — Hardware validation mode</div>
-
-  <div class="tunnel-bar">
-    <input id="tunnelInput" type="text" placeholder="Paste tunnel URL (leave empty if local)…">
-    <button onclick="setTunnel()">Set</button>
-  </div>
-
-  <div class="conn-bar">
-    <div class="conn-dot" id="connDot"></div>
-    <span id="connLabel">ESP32: checking…</span>
-    <span style="margin-left:auto;color:#64748b;" id="lastUpdate">—</span>
-  </div>
-
-  <div class="sensors">
-    <div class="sensor-card">
-      <div class="sensor-label">🧪 Ammonia MQ-137</div>
-      <div class="sensor-value"><span id="s-nh3">--</span><span class="sensor-unit">raw</span></div>
-    </div>
-    <div class="sensor-card">
-      <div class="sensor-label">🌡 Temperature</div>
-      <div class="sensor-value"><span id="s-temp">--</span><span class="sensor-unit">°C</span></div>
-    </div>
-    <div class="sensor-card">
-      <div class="sensor-label">〰 Turbidity</div>
-      <div class="sensor-value"><span id="s-turb">--</span><span class="sensor-unit">raw</span></div>
-    </div>
-    <div class="sensor-card">
-      <div class="sensor-label">≋ Water Flow</div>
-      <div class="sensor-value"><span id="s-flow">--</span><span class="sensor-unit">L/min</span></div>
-    </div>
-  </div>
-
-  <div class="grid">
-    <div class="act-card">
-      <div class="act-name">☀️ UV Sterilizer</div>
-      <div class="act-state" id="st-uv">● OFF</div>
-      <div class="btns">
-        <button class="btn-on"  onclick="send('UV_ON')">ON</button>
-        <button class="btn-off" onclick="send('UV_OFF')">OFF</button>
-      </div>
-    </div>
-    <div class="act-card">
-      <div class="act-name">💧 Water Pump (NH3)</div>
-      <div class="act-state" id="st-pump">● OFF</div>
-      <div class="btns">
-        <button class="btn-on"  onclick="send('PUMP_ON')">ON</button>
-        <button class="btn-off" onclick="send('PUMP_OFF')">OFF</button>
-      </div>
-    </div>
-    <div class="act-card">
-      <div class="act-name">🚰 Solenoid Valve</div>
-      <div class="act-state" id="st-valve">● CLOSED</div>
-      <div class="btns">
-        <button class="btn-on"  onclick="send('VALVE_ON')">OPEN</button>
-        <button class="btn-off" onclick="send('VALVE_OFF')">CLOSE</button>
-      </div>
-    </div>
-    <div class="act-card">
-      <div class="act-name">❄️ Peltier Cooler</div>
-      <div class="act-state" id="st-peltier">● OFF</div>
-      <div class="btns">
-        <button class="btn-on"  onclick="send('PELTIER_ON')">ON</button>
-        <button class="btn-off" onclick="send('PELTIER_OFF')">OFF</button>
-      </div>
-      <div style="font-size:10px;color:#64748b;margin-top:6px;">Circ. pump follows peltier automatically</div>
-    </div>
-    <div class="act-card">
-      <div class="act-name">⚙️ Stepper Motor</div>
-      <div class="act-state" id="st-motor">● IDLE</div>
-      <div class="motor-btns">
-        <button class="btn-motor" onclick="send('MOVE_CW')">▶ CW</button>
-        <button class="btn-motor" onclick="send('MOVE_CCW')">◀ CCW</button>
-      </div>
-      <div style="font-size:10px;color:#64748b;margin-top:6px;">800 steps per click</div>
-    </div>
-    <div class="act-card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;">
-      <div style="font-size:11px;color:#64748b;text-align:center;">Camera + Detection</div>
-      <div style="font-size:11px;color:#22c55e;font-weight:600;">✓ Working — tested separately</div>
-      <div style="font-size:10px;color:#64748b;text-align:center;">No test needed here</div>
-    </div>
-  </div>
-
-  <div class="log-box">
-    <div class="log-title">📋 Command Log</div>
-    <div class="log-area" id="logArea"></div>
-  </div>
-
-<script>
-  let API_BASE = localStorage.getItem('test_tunnel') || '';
-  let states = { uv:'OFF', pump:'OFF', valve:'CLOSED', peltier:'OFF', motor:'IDLE' };
-
-  function setTunnel() {
-    API_BASE = document.getElementById('tunnelInput').value.trim().replace(/\\/$/, '');
-    localStorage.setItem('test_tunnel', API_BASE);
-    log('Tunnel URL set: ' + (API_BASE || 'local'), 'info');
-  }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const inp = document.getElementById('tunnelInput');
-    if (inp && API_BASE) inp.value = API_BASE;
-  });
-
-  function log(msg, type='info') {
-    const t = new Date().toTimeString().slice(0,8);
-    const area = document.getElementById('logArea');
-    const e = document.createElement('div');
-    e.className = 'log-entry';
-    e.innerHTML = \`<span class="log-time">\${t}</span><span class="log-\${type}">\${msg}</span>\`;
-    area.prepend(e);
-    while (area.children.length > 60) area.removeChild(area.lastChild);
-  }
-
-  function updateStateUI(cmd) {
-    const map = {
-      'UV_ON':      { id:'st-uv',      text:'● ON',     cls:'on' },
-      'UV_OFF':     { id:'st-uv',      text:'● OFF',    cls:''   },
-      'PUMP_ON':    { id:'st-pump',    text:'● ON',     cls:'on' },
-      'PUMP_OFF':   { id:'st-pump',    text:'● OFF',    cls:''   },
-      'VALVE_ON':   { id:'st-valve',   text:'● OPEN',   cls:'on' },
-      'VALVE_OFF':  { id:'st-valve',   text:'● CLOSED', cls:''   },
-      'PELTIER_ON': { id:'st-peltier', text:'● ON',     cls:'on' },
-      'PELTIER_OFF':{ id:'st-peltier', text:'● OFF',    cls:''   },
-      'MOVE_CW':    { id:'st-motor',   text:'● CW done',cls:''   },
-      'MOVE_CCW':   { id:'st-motor',   text:'● CCW done',cls:''  },
-    };
-    const m = map[cmd];
-    if (!m) return;
-    const el = document.getElementById(m.id);
-    if (el) { el.textContent = m.text; el.className = 'act-state ' + m.cls; }
-  }
-
-  async function send(cmd) {
-    log('Sending: ' + cmd, 'info');
-    try {
-      const res = await fetch(\`\${API_BASE}/api/test/command\`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd })
-      });
-      const data = await res.json();
-      if (data.ok) {
-        log('✓ ' + cmd + ' — queued to ESP32', 'ok');
-        updateStateUI(cmd);
-      } else {
-        log('✗ ' + cmd + ' — ' + (data.error || 'failed'), 'err');
-      }
-    } catch(e) {
-      log('✗ Connection error: ' + e.message, 'err');
-    }
-  }
-
-  async function pollSensors() {
-    try {
-      const res = await fetch(\`\${API_BASE}/api/water/status\`, { cache: 'no-store' });
-      const s = await res.json();
-      const connected = !!s.connected;
-      document.getElementById('connDot').className = 'conn-dot ' + (connected ? 'on' : 'off');
-      document.getElementById('connLabel').textContent = 'ESP32: ' + (connected ? 'Online' : 'Offline');
-      document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
-      if (s.ammonia_raw   !== null) document.getElementById('s-nh3').textContent  = s.ammonia_raw;
-      if (s.temperature_c !== null) document.getElementById('s-temp').textContent = parseFloat(s.temperature_c).toFixed(1);
-      if (s.turbidity_ntu !== null) document.getElementById('s-turb').textContent = s.turbidity_ntu;
-      if (s.flow_lpm      !== null) document.getElementById('s-flow').textContent = parseFloat(s.flow_lpm).toFixed(2);
-    } catch(_) {
-      document.getElementById('connDot').className = 'conn-dot off';
-      document.getElementById('connLabel').textContent = 'ESP32: Offline';
-    }
-  }
-
-  log('Manual test page ready', 'info');
-  log('Upload the test .ino to ESP32 first', 'info');
-  pollSensors();
-  setInterval(pollSensors, 2000);
-<\/script>
-</body>
-</html>`);
-});
-
 
 // ── Main dashboard ────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
@@ -1505,10 +1277,10 @@ app.get('/', (req, res) => {
               <div class="zone-lbl right">Right Zone ▶</div>
               <div class="form-group"><label class="form-label">Steps</label><input type="number" id="zoneRightSteps" min="1" max="9999" value="${zoneRightSteps}"></div>
               <div class="form-group" style="margin-bottom:0"><label class="form-label">Direction</label>
-                <select id="zoneRightDir">
-                  <option value="CW" ${zoneRightDir === 'CW' ? 'selected' : ''}>CW — Clockwise</option>
-                  <option value="CCW" ${zoneRightDir === 'CCW' ? 'selected' : ''}>CCW — Counter-CW</option>
-                </select>
+               <select id="zoneRightDir">
+  <option value="CW" ${zoneRightDir === 'CW' ? 'selected' : ''}>CW — Clockwise</option>
+  <option value="CCW" ${zoneRightDir === 'CCW' ? 'selected' : ''}>CCW — Counter-CW</option>
+</select>
               </div>
             </div>
           </div>
@@ -1552,599 +1324,724 @@ app.get('/', (req, res) => {
     <!-- ══ SCHEMATIC VIEW ══ -->
     <div class="page-section" id="section-schematic">
       <style>
-        .schem-wrap {
-          width: 100%; min-height: 580px;
-          background: var(--surface); border: 1px solid var(--border);
-          border-radius: 14px; box-shadow: var(--shadow);
-          display: grid;
-          grid-template-columns: 220px 1fr 220px;
-          grid-template-rows: auto;
-          gap: 0; overflow: hidden; position: relative;
+        .schem2-wrap {
+          background: #f8f9fb;
+          border: 1px solid var(--border);
+          border-radius: 14px;
+          overflow: hidden;
+          position: relative;
+          min-height: 680px;
         }
-        /* ── Column headers ── */
-        .schem-col {
-          display: flex; flex-direction: column;
-          padding: 20px 14px; gap: 14px;
+        .schem2-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 13px 18px; border-bottom: 1px solid var(--border);
+          font-size: 12px; font-weight: 700; color: var(--navy);
+          letter-spacing: 0.02em; text-transform: uppercase;
+          background: var(--surface2);
         }
-        .schem-col.left  { background: #f0f7ff; border-right: 1px solid var(--border); }
-        .schem-col.center{ background: #fafbff; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding: 20px 24px; gap: 20px; }
-        .schem-col.right { background: #f0fff8; border-left: 1px solid var(--border); }
-        .schem-col-title {
-          font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
-          text-transform: uppercase; color: var(--muted);
-          text-align: center; margin-bottom: 4px;
+        #schematic-svg {
+          display: block;
+          width: 100%;
+          height: auto;
         }
-
-        /* ── Wire lines SVG overlay ── */
-        .schem-svg {
-          position: absolute; inset: 0; width: 100%; height: 100%;
-          pointer-events: none; z-index: 0;
-        }
-
-        /* ── Sensor cards ── */
-        .sensor-node {
-          background: var(--surface); border: 1.5px solid var(--border2);
-          border-radius: 10px; padding: 10px 12px;
-          display: flex; align-items: center; gap: 10px;
-          position: relative; z-index: 1;
-          box-shadow: 0 1px 4px rgba(11,30,61,0.06);
-          transition: box-shadow 0.15s;
-        }
-        .sensor-node:hover { box-shadow: var(--shadow); }
-        .sensor-icon-box {
-          width: 38px; height: 38px; border-radius: 8px; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 18px;
-        }
-        .sensor-node-label { font-size: 11px; font-weight: 700; color: var(--navy); line-height: 1.2; }
-        .sensor-node-value { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-top: 3px; }
-        .sensor-node-status { font-size: 10px; font-weight: 600; margin-top: 2px; }
-        .sensor-node-status.ok   { color: var(--accent2); }
-        .sensor-node-status.warn { color: var(--warn); }
-        .sensor-node-status.bad  { color: var(--danger); }
-        .sensor-node-status.off  { color: var(--muted); }
-
-        /* ── Central boards ── */
-        .center-board {
-          width: 100%; border-radius: 12px; padding: 14px 16px;
-          position: relative; z-index: 1; text-align: center;
-        }
-        .esp32-board {
-          background: linear-gradient(135deg, #1a3260, #0b1e3d);
-          border: 2px solid #2a4a8a; color: #fff;
-        }
-        .raspi-board {
-          background: linear-gradient(135deg, #7c2d12, #450a0a);
-          border: 2px solid #b45309; color: #fff;
-        }
-        .relay-board {
-          background: linear-gradient(135deg, #1c2a3d, #111827);
-          border: 2px solid #374151; color: #e2e8f0;
-        }
-        .board-chip {
-          display: inline-block; width: 54px; height: 36px; border-radius: 4px;
-          margin-bottom: 8px; position: relative;
-        }
-        .esp32-board .board-chip { background: #22c55e; box-shadow: 0 0 12px rgba(34,197,94,0.4); }
-        .raspi-board .board-chip { background: #f59e0b; box-shadow: 0 0 12px rgba(245,158,11,0.4); }
-        .relay-board .board-chip { background: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.3); }
-        /* Chip pins */
-        .board-chip::before, .board-chip::after {
-          content: '';
-          position: absolute; top: 4px; bottom: 4px; width: 5px;
-          background: repeating-linear-gradient(to bottom, #888 0, #888 4px, transparent 4px, transparent 7px);
-        }
-        .board-chip::before { left: -5px; }
-        .board-chip::after  { right: -5px; }
-        .board-title { font-size: 12px; font-weight: 800; letter-spacing: 0.04em; }
-        .board-sub   { font-size: 9px; opacity: 0.7; margin-top: 2px; letter-spacing: 0.08em; font-family: var(--mono); }
-        /* GPIO pins strip */
-        .gpio-strip {
-          display: flex; justify-content: center; gap: 3px; margin-top: 8px; flex-wrap: wrap;
-        }
-        .gpio-pin {
-          width: 6px; height: 10px; border-radius: 2px; background: #fbbf24;
-          box-shadow: 0 0 4px rgba(251,191,36,0.5);
-        }
-
-        /* ── Relay module ── */
-        .relay-channels {
-          display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 10px;
-        }
-        .relay-ch {
-          height: 24px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15);
-          background: rgba(255,255,255,0.07);
-          display: flex; align-items: center; justify-content: center;
-          font-family: var(--mono); font-size: 8px; color: rgba(255,255,255,0.6);
-          transition: all 0.25s;
-        }
-        .relay-ch.active { background: rgba(34,197,94,0.3); border-color: #22c55e; color: #86efac; }
-
-        /* ── Actuator cards ── */
-        .actuator-node {
-          background: var(--surface); border: 1.5px solid var(--border2);
-          border-radius: 10px; padding: 10px 12px;
-          position: relative; z-index: 1;
-          box-shadow: 0 1px 4px rgba(11,30,61,0.06);
-          transition: box-shadow 0.15s;
-        }
-        .actuator-node:hover { box-shadow: var(--shadow); }
-        .actuator-node-top { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
-        .actuator-icon-box {
-          width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center; font-size: 17px;
-        }
-        .actuator-node-label { font-size: 11px; font-weight: 700; color: var(--navy); }
-        .actuator-node-state { font-size: 10px; font-weight: 600; margin-top: 2px; }
-        .actuator-node-state.on  { color: var(--accent2); }
-        .actuator-node-state.off { color: var(--muted); }
-        /* Glow border when ON */
-        .actuator-node.is-on { border-color: var(--accent2); box-shadow: 0 0 0 2px rgba(0,179,126,0.15), var(--shadow); }
-        .actuator-node-btns { display: flex; gap: 5px; }
-        .schem-btn-on, .schem-btn-off {
-          flex: 1; padding: 5px 0; border-radius: 5px; border: 1.5px solid;
-          font-size: 10px; font-weight: 700; cursor: pointer; transition: all 0.15s;
-        }
-        .schem-btn-on  { border-color: rgba(0,179,126,0.4); background: rgba(0,179,126,0.08); color: var(--accent2); }
-        .schem-btn-on:hover  { background: rgba(0,179,126,0.18); }
-        .schem-btn-off { border-color: rgba(229,62,90,0.35); background: rgba(229,62,90,0.06); color: var(--danger); }
-        .schem-btn-off:hover { background: rgba(229,62,90,0.13); }
-        .schem-btn-on:disabled, .schem-btn-off:disabled { opacity: 0.35; cursor: not-allowed; }
-
-        /* ── Camera status node ── */
-        .cam-status-badge {
-          display: inline-flex; align-items: center; gap: 5px;
-          padding: 4px 9px; border-radius: 999px; font-size: 10px; font-weight: 700;
-          border: 1.5px solid; margin-top: 5px;
-        }
-        .cam-status-badge.detected { background: rgba(0,179,126,0.1); border-color: rgba(0,179,126,0.3); color: var(--accent2); }
-        .cam-status-badge.idle     { background: rgba(122,147,180,0.1); border-color: rgba(122,147,180,0.25); color: var(--muted); }
-        .cam-status-badge.scanning { background: rgba(0,112,243,0.08); border-color: rgba(0,112,243,0.3); color: var(--accent); }
-
-        /* ── Connection wire dots ── */
-        .wire-dot {
-          position: absolute; width: 8px; height: 8px; border-radius: 50%;
-          background: var(--accent); z-index: 2;
-          box-shadow: 0 0 6px rgba(0,112,243,0.5);
-        }
-
-        /* ── Legend ── */
-        .schem-legend {
-          display: flex; gap: 16px; flex-wrap: wrap;
-          padding: 10px 20px; border-top: 1px solid var(--border);
+        .schem2-legend {
+          display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
+          padding: 10px 18px; border-top: 1px solid var(--border);
           background: var(--surface2); font-size: 11px; color: var(--muted);
         }
-        .legend-item { display: flex; align-items: center; gap: 6px; }
-        .legend-line { width: 20px; height: 2px; border-radius: 1px; }
-        .legend-line.serial { background: var(--accent); }
-        .legend-line.power  { background: var(--danger); }
-        .legend-line.gnd    { background: var(--muted); }
-        .legend-line.signal { background: var(--accent2); }
-
-        /* ── Auto mode note ── */
-        .schem-mode-note {
-          font-size: 11px; color: var(--muted); text-align: center;
-          padding: 8px 0 0; font-style: italic;
+        .schem2-legend span { display: flex; align-items: center; gap: 6px; }
+        .schem2-legend .lw { width: 22px; height: 2px; border-radius: 1px; }
+        .lw-blue  { background: #3b82f6; }
+        .lw-green { background: #22c55e; }
+        .lw-red   { background: #ef4444; }
+        .lw-gray  { background: #94a3b8; }
+        .lw-dash  { background: transparent; border-top: 2px dashed #94a3b8; }
+        .schem-svg-wrapper { position: relative; display: block; }
+        .act-overlay {
+          display: flex; flex-direction: row;
+          align-items: center; justify-content: space-between;
+          gap: 6px; pointer-events: all;
+          padding: 4px 8px;
+          background: rgba(15,23,42,0.85);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-bottom: none;
+          border-radius: 6px 6px 0 0;
+        }
+        .act-overlay-btns { display: flex; gap: 4px; }
+        .s-btn {
+          padding: 4px 9px; border-radius: 5px; border: 1.5px solid;
+          font-size: 10px; font-weight: 700; cursor: pointer;
+          font-family: 'Share Tech Mono', monospace; letter-spacing: 0.04em;
+          transition: all 0.15s; line-height: 1;
+        }
+        .s-btn-on  { border-color: rgba(34,197,94,0.5); background: rgba(34,197,94,0.12); color: #22c55e; }
+        .s-btn-on:hover  { background: rgba(34,197,94,0.25); }
+        .s-btn-off { border-color: rgba(239,68,68,0.45); background: rgba(239,68,68,0.09); color: #ef4444; }
+        .s-btn-off:hover { background: rgba(239,68,68,0.2); }
+        .s-btn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+        .s-state-badge {
+          font-size: 9px; font-family: 'Share Tech Mono', monospace;
+          padding: 1px 6px; border-radius: 999px; font-weight: 700;
+          border: 1px solid rgba(255,255,255,0.1);
         }
       </style>
 
-      <div class="card" style="overflow:visible;">
-        <div class="card-header">
-          <div class="card-header-left">🔌 SYSTEM SCHEMATIC — Hardware Overview</div>
-          <span id="schemModeBadge" style="font-size:10px;padding:3px 10px;border-radius:999px;background:rgba(0,179,126,0.1);color:var(--accent2);border:1px solid rgba(0,179,126,0.3);">🤖 AUTOMATED</span>
+      <!-- ── Command Log ── -->
+      <div style="
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 14px;
+        overflow: hidden;
+      ">
+        <div style="
+          display:flex; align-items:center; justify-content:space-between;
+          padding: 10px 16px;
+          background: var(--surface2);
+          border-bottom: 1px solid var(--border);
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.08em; color: var(--navy);
+        ">
+          <span>📟 COMMAND LOG</span>
+          <button onclick="document.getElementById('schemCmdLog').innerHTML=''" style="
+            padding:3px 10px; border-radius:5px; border:1px solid var(--border2);
+            background:none; color:var(--muted); font-size:10px; cursor:pointer;
+          ">Clear</button>
         </div>
-
-        <div class="schem-wrap" id="schemWrap">
-
-          <!-- ── Wire SVG overlay ── -->
-          <svg class="schem-svg" id="schemSvg" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <marker id="arrowB" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-                <path d="M0,0 L6,3 L0,6 Z" fill="rgba(0,112,243,0.5)"/>
-              </marker>
-              <marker id="arrowG" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-                <path d="M0,0 L6,3 L0,6 Z" fill="rgba(0,179,126,0.5)"/>
-              </marker>
-            </defs>
-            <!-- Horizontal lines from sensors to ESP32 center -->
-            <!-- These are decorative static lines; dynamic ones drawn by JS -->
-            <!-- Left sensors → ESP32 -->
-            <line x1="220" y1="120" x2="310" y2="220" stroke="rgba(0,112,243,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <line x1="220" y1="190" x2="310" y2="250" stroke="rgba(0,112,243,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <line x1="220" y1="270" x2="310" y2="280" stroke="rgba(0,112,243,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <line x1="220" y1="345" x2="310" y2="300" stroke="rgba(0,112,243,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <line x1="220" y1="415" x2="310" y2="320" stroke="rgba(245,158,11,0.25)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <!-- Right actuators ← Relay -->
-            <line x1="690" y1="110" x2="780" y2="120" stroke="rgba(0,179,126,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <line x1="690" y1="200" x2="780" y2="200" stroke="rgba(0,179,126,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <line x1="690" y1="295" x2="780" y2="290" stroke="rgba(0,179,126,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <line x1="690" y1="390" x2="780" y2="380" stroke="rgba(0,179,126,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-            <line x1="690" y1="480" x2="780" y2="460" stroke="rgba(245,158,11,0.2)" stroke-width="1.5" stroke-dasharray="5,4"/>
-          </svg>
-
-          <!-- ══ LEFT — SENSORS ══ -->
-          <div class="schem-col left">
-            <div class="schem-col-title">📡 Sensors</div>
-
-            <!-- MQ-137 Ammonia -->
-            <div class="sensor-node">
-              <div class="sensor-icon-box" style="background:rgba(0,112,243,0.1);">
-                <!-- MQ sensor shape -->
-                <svg width="28" height="28" viewBox="0 0 28 28">
-                  <rect x="4" y="6" width="20" height="16" rx="3" fill="#1a3260"/>
-                  <circle cx="14" cy="14" r="5" fill="#3b82f6"/>
-                  <circle cx="14" cy="14" r="2.5" fill="#93c5fd"/>
-                  <rect x="6" y="22" width="3" height="4" rx="1" fill="#64748b"/>
-                  <rect x="12.5" y="22" width="3" height="4" rx="1" fill="#64748b"/>
-                  <rect x="19" y="22" width="3" height="4" rx="1" fill="#64748b"/>
-                </svg>
-              </div>
-              <div>
-                <div class="sensor-node-label">MQ-137 Ammonia</div>
-                <div class="sensor-node-value" id="schem-nh3">-- raw</div>
-                <div class="sensor-node-status off" id="schem-nh3-status">No data</div>
-              </div>
-            </div>
-
-            <!-- DS18B20 Temperature -->
-            <div class="sensor-node">
-              <div class="sensor-icon-box" style="background:rgba(0,179,126,0.1);">
-                <svg width="28" height="28" viewBox="0 0 28 28">
-                  <!-- probe body -->
-                  <rect x="11" y="2" width="6" height="18" rx="3" fill="#1a3260"/>
-                  <!-- bulb -->
-                  <circle cx="14" cy="22" r="5" fill="#ef4444"/>
-                  <circle cx="14" cy="22" r="2.5" fill="#fca5a5"/>
-                  <!-- mercury line -->
-                  <rect x="13" y="8" width="2" height="12" rx="1" fill="#fca5a5"/>
-                </svg>
-              </div>
-              <div>
-                <div class="sensor-node-label">DS18B20 Temp</div>
-                <div class="sensor-node-value" id="schem-temp">-- °C</div>
-                <div class="sensor-node-status off" id="schem-temp-status">No data</div>
-              </div>
-            </div>
-
-            <!-- Turbidity -->
-            <div class="sensor-node">
-              <div class="sensor-icon-box" style="background:rgba(245,158,11,0.1);">
-                <svg width="28" height="28" viewBox="0 0 28 28">
-                  <rect x="5" y="4" width="18" height="20" rx="3" fill="#1c2a3d"/>
-                  <!-- emitter -->
-                  <circle cx="9" cy="14" r="3" fill="#fbbf24"/>
-                  <!-- receiver -->
-                  <circle cx="19" cy="14" r="3" fill="#3b82f6"/>
-                  <!-- water drops -->
-                  <circle cx="14" cy="11" r="1.5" fill="rgba(147,197,253,0.6)"/>
-                  <circle cx="14" cy="17" r="1" fill="rgba(147,197,253,0.4)"/>
-                  <!-- legs -->
-                  <rect x="7"  y="24" width="2" height="3" fill="#64748b"/>
-                  <rect x="19" y="24" width="2" height="3" fill="#64748b"/>
-                </svg>
-              </div>
-              <div>
-                <div class="sensor-node-label">Turbidity</div>
-                <div class="sensor-node-value" id="schem-turb">-- NTU</div>
-                <div class="sensor-node-status off" id="schem-turb-status">No data</div>
-              </div>
-            </div>
-
-            <!-- Flow Sensor YF-S201 -->
-            <div class="sensor-node">
-              <div class="sensor-icon-box" style="background:rgba(6,182,212,0.1);">
-                <svg width="28" height="28" viewBox="0 0 28 28">
-                  <!-- body -->
-                  <rect x="5" y="8" width="18" height="12" rx="4" fill="#0e7490"/>
-                  <!-- pipe ends -->
-                  <rect x="2" y="11" width="4" height="6" rx="1" fill="#0891b2"/>
-                  <rect x="22" y="11" width="4" height="6" rx="1" fill="#0891b2"/>
-                  <!-- spinner -->
-                  <circle cx="14" cy="14" r="3.5" fill="#22d3ee"/>
-                  <line x1="14" y1="11" x2="14" y2="17" stroke="#0e7490" stroke-width="1.5"/>
-                  <line x1="11" y1="14" x2="17" y2="14" stroke="#0e7490" stroke-width="1.5"/>
-                  <!-- wire -->
-                  <rect x="12" y="20" width="4" height="5" rx="1" fill="#fbbf24"/>
-                </svg>
-              </div>
-              <div>
-                <div class="sensor-node-label">Flow Sensor YF-S201</div>
-                <div class="sensor-node-value" id="schem-flow">-- L/min</div>
-                <div class="sensor-node-status off" id="schem-flow-status">No data</div>
-              </div>
-            </div>
-
-            <!-- Pi Camera -->
-            <div class="sensor-node" style="border-color:rgba(245,158,11,0.4);background:rgba(245,158,11,0.03);">
-              <div class="sensor-icon-box" style="background:rgba(245,158,11,0.12);">
-                <svg width="28" height="28" viewBox="0 0 28 28">
-                  <rect x="3" y="7" width="22" height="16" rx="3" fill="#451a03"/>
-                  <rect x="5" y="9" width="18" height="12" rx="2" fill="#1c1917"/>
-                  <!-- lens rings -->
-                  <circle cx="14" cy="15" r="5" fill="#0f172a"/>
-                  <circle cx="14" cy="15" r="3.5" fill="#1e3a5f"/>
-                  <circle cx="14" cy="15" r="2" fill="#334155"/>
-                  <circle cx="14" cy="15" r="0.8" fill="#e2e8f0"/>
-                  <!-- ribbon connector -->
-                  <rect x="12" y="23" width="4" height="3" fill="#fbbf24"/>
-                </svg>
-              </div>
-              <div>
-                <div class="sensor-node-label">Pi Camera</div>
-                <div id="schem-cam-badge">
-                  <span class="cam-status-badge idle" id="schemCamBadge">◌ IDLE</span>
-                </div>
-              </div>
-            </div>
-
-          </div><!-- /left -->
-
-          <!-- ══ CENTER — ESP32 + RPi ══ -->
-          <div class="schem-col center">
-            <div class="schem-col-title">🖥 Control Units</div>
-
-            <!-- ESP32 -->
-            <div class="center-board esp32-board" style="width:100%;">
-              <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px;">
-                <div class="board-chip"></div>
-              </div>
-              <div class="board-title">ESP32 DevKit</div>
-              <div class="board-sub">ESPRESSIF · 240MHz · WiFi+BT</div>
-              <div class="gpio-strip">
-                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
-                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
-                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
-                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
-                <div class="gpio-pin"></div><div class="gpio-pin"></div><div class="gpio-pin"></div>
-                <div class="gpio-pin"></div>
-              </div>
-              <div style="margin-top:10px;font-size:10px;opacity:0.65;font-family:var(--mono);">
-                Sensors · Relay Driver · Motor Driver
-              </div>
-              <div style="margin-top:6px;">
-                <span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(34,197,94,0.2);color:#86efac;border:1px solid rgba(34,197,94,0.3);" id="schemEsp32Status">● Offline</span>
-              </div>
-            </div>
-
-            <!-- Serial link arrow -->
-            <div style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--muted);">
-              <div style="height:28px;width:2px;background:linear-gradient(to bottom,rgba(0,112,243,0.6),rgba(245,158,11,0.6));border-radius:1px;"></div>
-              <span>USB Serial /dev/ttyUSB0</span>
-            </div>
-
-            <!-- Relay Module -->
-            <div class="center-board relay-board" style="width:100%;">
-              <div class="board-title" style="font-size:11px;">4-Channel Relay Module</div>
-              <div class="board-sub">Active LOW · 5V coil</div>
-              <div class="relay-channels" style="margin-top:10px;">
-                <div class="relay-ch" id="relay-ch1" title="UV Sterilizer">UV</div>
-                <div class="relay-ch" id="relay-ch2" title="Water Pump">PUMP</div>
-                <div class="relay-ch" id="relay-ch3" title="Solenoid Valve">VLVE</div>
-                <div class="relay-ch" id="relay-ch4" title="Peltier Cooler">PELT</div>
-              </div>
-              <div style="margin-top:8px;font-size:9px;opacity:0.55;font-family:var(--mono);">
-                GPIO4 · GPIO26 · GPIO14 · RPWM16
-              </div>
-            </div>
-
-            <!-- Serial link arrow to RPi -->
-            <div style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--muted);">
-              <div style="height:28px;width:2px;background:linear-gradient(to bottom,rgba(245,158,11,0.6),rgba(180,83,9,0.6));border-radius:1px;"></div>
-              <span>USB-C Serial → Raspberry Pi 5</span>
-            </div>
-
-            <!-- Raspberry Pi 5 -->
-            <div class="center-board raspi-board" style="width:100%;">
-              <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px;">
-                <div class="board-chip"></div>
-              </div>
-              <div class="board-title">Raspberry Pi 5</div>
-              <div class="board-sub">4GB · Python Backend · Node.js Frontend</div>
-              <div class="gpio-strip">
-                <div class="gpio-pin" style="background:#f97316;"></div>
-                <div class="gpio-pin" style="background:#f97316;"></div>
-                <div class="gpio-pin" style="background:#f97316;"></div>
-                <div class="gpio-pin" style="background:#f97316;"></div>
-                <div class="gpio-pin" style="background:#f97316;"></div>
-                <div class="gpio-pin" style="background:#f97316;"></div>
-                <div class="gpio-pin" style="background:#f97316;"></div>
-                <div class="gpio-pin" style="background:#f97316;"></div>
-              </div>
-              <div style="margin-top:10px;font-size:10px;opacity:0.65;font-family:var(--mono);">
-                Camera · AI Detection (Roboflow) · Dashboard
-              </div>
-              <div style="margin-top:6px;display:flex;gap:5px;justify-content:center;flex-wrap:wrap;">
-                <span style="font-size:9px;padding:2px 7px;border-radius:999px;background:rgba(251,191,36,0.2);color:#fde68a;border:1px solid rgba(251,191,36,0.3);">Python</span>
-                <span style="font-size:9px;padding:2px 7px;border-radius:999px;background:rgba(74,222,128,0.15);color:#86efac;border:1px solid rgba(74,222,128,0.25);">Node.js</span>
-                <span style="font-size:9px;padding:2px 7px;border-radius:999px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.25);">MongoDB</span>
-              </div>
-            </div>
-
-            <!-- A4988 Motor Driver -->
-            <div style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1.5px solid #334155;border-radius:10px;padding:12px;width:100%;text-align:center;position:relative;z-index:1;">
-              <div style="font-size:11px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">A4988 Stepper Driver</div>
-              <div style="font-size:9px;color:#64748b;font-family:var(--mono);margin-bottom:8px;">STEP:GPIO12 · DIR:GPIO2 · EN:GPIO13</div>
-              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;">
-                <div style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:3px;font-size:9px;color:#fca5a5;font-family:var(--mono);">VMOT 12V</div>
-                <div style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.3);border-radius:4px;padding:3px;font-size:9px;color:#fde68a;font-family:var(--mono);">VDD 3.3V</div>
-                <div style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);border-radius:4px;padding:3px;font-size:9px;color:#86efac;font-family:var(--mono);">1/8 step</div>
-              </div>
-            </div>
-
-            <div class="schem-mode-note" id="schemModeNote">🤖 Automated — sensors control actuators</div>
-          </div><!-- /center -->
-
-          <!-- ══ RIGHT — ACTUATORS ══ -->
-          <div class="schem-col right">
-            <div class="schem-col-title">⚡ Actuators</div>
-
-            <!-- UV Sterilizer -->
-            <div class="actuator-node" id="schem-act-uv">
-              <div class="actuator-node-top">
-                <div class="actuator-icon-box" style="background:rgba(250,204,21,0.12);">
-                  <svg width="28" height="28" viewBox="0 0 28 28">
-                    <!-- tube -->
-                    <rect x="6" y="11" width="16" height="6" rx="3" fill="#e2e8f0"/>
-                    <rect x="8" y="13" width="12" height="2" rx="1" fill="#a5b4fc"/>
-                    <!-- glow when on — controlled via opacity -->
-                    <ellipse cx="14" cy="14" rx="10" ry="5" fill="rgba(167,139,250,0.2)" class="glow-uv" opacity="0"/>
-                    <!-- end caps -->
-                    <rect x="3" y="12" width="4" height="4" rx="1" fill="#94a3b8"/>
-                    <rect x="21" y="12" width="4" height="4" rx="1" fill="#94a3b8"/>
-                    <!-- rays -->
-                    <line x1="14" y1="6" x2="14" y2="2" stroke="#c4b5fd" stroke-width="1.5" class="glow-uv"/>
-                    <line x1="9"  y1="8" x2="6"  y2="5" stroke="#c4b5fd" stroke-width="1.5" class="glow-uv"/>
-                    <line x1="19" y1="8" x2="22" y2="5" stroke="#c4b5fd" stroke-width="1.5" class="glow-uv"/>
-                  </svg>
-                </div>
-                <div>
-                  <div class="actuator-node-label">UV Sterilizer</div>
-                  <div class="actuator-node-state off" id="schem-uv-state">● OFF</div>
-                </div>
-              </div>
-              <div class="actuator-node-btns">
-                <button class="schem-btn-on  schem-manual-btn" onclick="schemControl('UV_ON')"  disabled>ON</button>
-                <button class="schem-btn-off schem-manual-btn" onclick="schemControl('UV_OFF')" disabled>OFF</button>
-              </div>
-            </div>
-
-            <!-- Water Pump -->
-            <div class="actuator-node" id="schem-act-pump">
-              <div class="actuator-node-top">
-                <div class="actuator-icon-box" style="background:rgba(59,130,246,0.1);">
-                  <svg width="28" height="28" viewBox="0 0 28 28">
-                    <!-- body -->
-                    <circle cx="14" cy="14" r="9" fill="#1e40af"/>
-                    <circle cx="14" cy="14" r="6" fill="#2563eb"/>
-                    <!-- impeller -->
-                    <circle cx="14" cy="14" r="2" fill="#93c5fd"/>
-                    <line x1="14" y1="8"  x2="14" y2="12" stroke="#bfdbfe" stroke-width="2"/>
-                    <line x1="14" y1="16" x2="14" y2="20" stroke="#bfdbfe" stroke-width="2"/>
-                    <line x1="8"  y1="14" x2="12" y2="14" stroke="#bfdbfe" stroke-width="2"/>
-                    <line x1="16" y1="14" x2="20" y2="14" stroke="#bfdbfe" stroke-width="2"/>
-                    <!-- outlet -->
-                    <rect x="21" y="12" width="5" height="4" rx="1" fill="#1d4ed8"/>
-                  </svg>
-                </div>
-                <div>
-                  <div class="actuator-node-label">Submersible Pump</div>
-                  <div class="actuator-node-state off" id="schem-pump-state">● OFF</div>
-                </div>
-              </div>
-              <div class="actuator-node-btns">
-                <button class="schem-btn-on  schem-manual-btn" onclick="schemControl('PUMP_ON')"  disabled>ON</button>
-                <button class="schem-btn-off schem-manual-btn" onclick="schemControl('PUMP_OFF')" disabled>OFF</button>
-              </div>
-            </div>
-
-            <!-- Solenoid Valve -->
-            <div class="actuator-node" id="schem-act-valve">
-              <div class="actuator-node-top">
-                <div class="actuator-icon-box" style="background:rgba(148,163,184,0.12);">
-                  <svg width="28" height="28" viewBox="0 0 28 28">
-                    <!-- body -->
-                    <rect x="7" y="9" width="14" height="10" rx="2" fill="#374151"/>
-                    <!-- solenoid coil lines -->
-                    <line x1="9"  y1="11" x2="9"  y2="17" stroke="#6b7280" stroke-width="1"/>
-                    <line x1="11" y1="11" x2="11" y2="17" stroke="#6b7280" stroke-width="1"/>
-                    <line x1="13" y1="11" x2="13" y2="17" stroke="#6b7280" stroke-width="1"/>
-                    <line x1="15" y1="11" x2="15" y2="17" stroke="#6b7280" stroke-width="1"/>
-                    <line x1="17" y1="11" x2="17" y2="17" stroke="#6b7280" stroke-width="1"/>
-                    <line x1="19" y1="11" x2="19" y2="17" stroke="#6b7280" stroke-width="1"/>
-                    <!-- pipe in/out -->
-                    <rect x="2"  y="12" width="6" height="4" rx="1" fill="#4b5563"/>
-                    <rect x="20" y="12" width="6" height="4" rx="1" fill="#4b5563"/>
-                    <!-- plunger indicator -->
-                    <circle cx="14" cy="7" r="3" fill="#f59e0b"/>
-                    <rect x="13" y="7" width="2" height="5" fill="#d97706"/>
-                  </svg>
-                </div>
-                <div>
-                  <div class="actuator-node-label">Solenoid Valve</div>
-                  <div class="actuator-node-state off" id="schem-valve-state">● CLOSED</div>
-                </div>
-              </div>
-              <div class="actuator-node-btns">
-                <button class="schem-btn-on  schem-manual-btn" onclick="schemControl('VALVE_ON')"  disabled>OPEN</button>
-                <button class="schem-btn-off schem-manual-btn" onclick="schemControl('VALVE_OFF')" disabled>CLOSE</button>
-              </div>
-            </div>
-
-            <!-- Peltier Cooler -->
-            <div class="actuator-node" id="schem-act-peltier">
-              <div class="actuator-node-top">
-                <div class="actuator-icon-box" style="background:rgba(6,182,212,0.1);">
-                  <svg width="28" height="28" viewBox="0 0 28 28">
-                    <!-- TEC module body -->
-                    <rect x="5" y="8" width="18" height="12" rx="2" fill="#0e7490"/>
-                    <!-- ceramic plates -->
-                    <rect x="5" y="8"  width="18" height="3" rx="1" fill="#e2e8f0"/>
-                    <rect x="5" y="17" width="18" height="3" rx="1" fill="#1e3a5f"/>
-                    <!-- P-N elements -->
-                    <rect x="8"  y="11" width="3" height="6" rx="1" fill="#ef4444"/>
-                    <rect x="12.5" y="11" width="3" height="6" rx="1" fill="#3b82f6"/>
-                    <rect x="17" y="11" width="3" height="6" rx="1" fill="#ef4444"/>
-                    <!-- snowflake on cold side -->
-                    <text x="14" y="27" text-anchor="middle" font-size="7" fill="#93c5fd">❄</text>
-                  </svg>
-                </div>
-                <div>
-                  <div class="actuator-node-label">Peltier Cooler</div>
-                  <div class="actuator-node-state off" id="schem-peltier-state">● OFF</div>
-                </div>
-              </div>
-              <div class="actuator-node-btns">
-                <button class="schem-btn-on  schem-manual-btn" onclick="schemControl('COOL_MAX')" disabled>ON MAX</button>
-                <button class="schem-btn-off schem-manual-btn" onclick="schemControl('COOL_OFF')" disabled>OFF</button>
-              </div>
-            </div>
-
-            <!-- Stepper Motor -->
-            <div class="actuator-node" id="schem-act-motor">
-              <div class="actuator-node-top">
-                <div class="actuator-icon-box" style="background:rgba(245,158,11,0.1);">
-                  <svg width="28" height="28" viewBox="0 0 28 28">
-                    <!-- body -->
-                    <rect x="5" y="5" width="18" height="18" rx="3" fill="#1c2a3d"/>
-                    <!-- shaft -->
-                    <circle cx="14" cy="14" r="5" fill="#374151"/>
-                    <circle cx="14" cy="14" r="2.5" fill="#94a3b8"/>
-                    <rect x="14" y="2" width="2" height="5" rx="1" fill="#94a3b8"/>
-                    <!-- winding marks -->
-                    <rect x="5"  y="9"  width="3" height="2" rx="1" fill="#f59e0b"/>
-                    <rect x="5"  y="17" width="3" height="2" rx="1" fill="#f59e0b"/>
-                    <rect x="20" y="9"  width="3" height="2" rx="1" fill="#ef4444"/>
-                    <rect x="20" y="17" width="3" height="2" rx="1" fill="#ef4444"/>
-                  </svg>
-                </div>
-                <div>
-                  <div class="actuator-node-label">Stepper Motor</div>
-                  <div class="actuator-node-state off" id="schem-motor-state">● IDLE</div>
-                </div>
-              </div>
-              <div class="actuator-node-btns">
-                <button class="schem-btn-on" onclick="schemRunMotor('CW')"  style="border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.08);color:var(--warn);">▶ CW</button>
-                <button class="schem-btn-off" onclick="schemRunMotor('CCW')" style="border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.06);color:var(--warn);">◀ CCW</button>
-              </div>
-            </div>
-
-          </div><!-- /right -->
-
-        </div><!-- /schem-wrap -->
-
-        <!-- Legend -->
-        <div class="schem-legend">
-          <div class="legend-item"><div class="legend-line serial"></div><span>Serial / Signal</span></div>
-          <div class="legend-item"><div class="legend-line signal"></div><span>Actuator Output</span></div>
-          <div class="legend-item"><div class="legend-line power"></div><span>12V Power</span></div>
-          <div class="legend-item"><div class="legend-line gnd"></div><span>Common GND</span></div>
-          <div style="margin-left:auto;font-size:11px;color:var(--muted);">
-            ⚠ Switch to Manual mode in Actuators page to enable controls
-          </div>
+        <div id="schemCmdLog" style="
+          font-family: var(--mono); font-size: 11px; color: var(--muted);
+          height: 90px; overflow-y: auto; padding: 8px 14px;
+          line-height: 1.9; background: #0f172a;
+        ">
+          <span style="color:#334155;">— No commands yet —</span>
         </div>
-
       </div>
+
+      <div class="schem2-wrap">
+        <div class="schem2-header">
+          <span>🔌 SYSTEM SCHEMATIC — Hardware Overview</span>
+          <span id="schemModeBadge2" style="font-size:10px;padding:3px 10px;border-radius:999px;background:rgba(0,179,126,0.1);color:var(--accent2);border:1px solid rgba(0,179,126,0.3);">🤖 AUTOMATED</span>
+        </div>
+
+        <div class="schem-svg-wrapper" id="schemSvgWrapper">
+        <svg id="schematic-svg" viewBox="0 0 1100 720" xmlns="http://www.w3.org/2000/svg" style="background:#f8f9fb;display:block;width:100%;">
+          <defs>
+            <marker id="arrowB2" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+              <path d="M0,0 L7,3.5 L0,7 Z" fill="#3b82f6" opacity="0.7"/>
+            </marker>
+            <marker id="arrowG2" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+              <path d="M0,0 L7,3.5 L0,7 Z" fill="#22c55e" opacity="0.7"/>
+            </marker>
+            <marker id="arrowR2" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+              <path d="M0,0 L7,3.5 L0,7 Z" fill="#ef4444" opacity="0.6"/>
+            </marker>
+            <marker id="arrowGray" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+              <path d="M0,0 L7,3.5 L0,7 Z" fill="#94a3b8" opacity="0.7"/>
+            </marker>
+          </defs>
+
+          <!-- ═══════════════════════════════════════════ -->
+          <!-- WIRES — drawn first so components sit on top -->
+          <!-- ═══════════════════════════════════════════ -->
+
+          <!-- Power rails (red dashed at top) -->
+          <line x1="410" y1="32" x2="690" y2="32" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.5"/>
+          <text x="545" y="26" text-anchor="middle" font-size="9" fill="#ef4444" opacity="0.7" font-family="monospace">12V POWER RAIL</text>
+
+          <!-- GND rail (gray dashed at bottom) -->
+          <line x1="410" y1="690" x2="690" y2="690" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.4"/>
+          <text x="545" y="705" text-anchor="middle" font-size="9" fill="#94a3b8" opacity="0.6" font-family="monospace">GND</text>
+
+          <!-- === SENSOR TO ESP32 WIRES (blue signal lines) === -->
+          <!-- MQ-137 → ESP32 GPIO34 -->
+          <path d="M 178 108 L 370 108 L 370 248" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-dasharray="4,3" opacity="0.6" marker-end="url(#arrowB2)"/>
+          <text x="270" y="103" text-anchor="middle" font-size="8.5" fill="#3b82f6" opacity="0.8" font-family="monospace">GPIO34</text>
+
+          <!-- DS18B20 → ESP32 GPIO15 -->
+          <path d="M 178 198 L 350 198 L 350 252" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-dasharray="4,3" opacity="0.6" marker-end="url(#arrowB2)"/>
+          <text x="258" y="193" text-anchor="middle" font-size="8.5" fill="#3b82f6" opacity="0.8" font-family="monospace">GPIO15</text>
+
+          <!-- Turbidity → ESP32 GPIO35 -->
+          <path d="M 178 298 L 355 298 L 355 255" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-dasharray="4,3" opacity="0.6" marker-end="url(#arrowB2)"/>
+          <text x="258" y="293" text-anchor="middle" font-size="8.5" fill="#3b82f6" opacity="0.8" font-family="monospace">GPIO35</text>
+
+          <!-- Flow Sensor → ESP32 GPIO25 -->
+          <path d="M 178 398 L 340 398 L 340 262" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-dasharray="4,3" opacity="0.6" marker-end="url(#arrowB2)"/>
+          <text x="248" y="393" text-anchor="middle" font-size="8.5" fill="#3b82f6" opacity="0.8" font-family="monospace">GPIO25</text>
+
+          <!-- Pi Camera → RPi CSI ribbon (yellow dashed) -->
+          <path d="M 178 548 L 410 548 L 410 510" stroke="#f59e0b" stroke-width="1.5" fill="none" stroke-dasharray="4,2" opacity="0.6" marker-end="url(#arrowR2)"/>
+          <text x="290" y="543" text-anchor="middle" font-size="8.5" fill="#f59e0b" opacity="0.8" font-family="monospace">CSI</text>
+
+          <!-- === ESP32 TO RELAY MODULE (green control lines) === -->
+          <!-- ESP32 → Relay CH1 (UV) GPIO4 -->
+          <path d="M 612 270 L 650 270 L 650 205" stroke="#22c55e" stroke-width="1.5" fill="none" stroke-dasharray="4,2" opacity="0.7" marker-end="url(#arrowG2)"/>
+          <text x="640" y="243" text-anchor="middle" font-size="8" fill="#22c55e" opacity="0.8" font-family="monospace">GPIO4</text>
+
+          <!-- ESP32 → Relay CH2 (Pump) GPIO26 -->
+          <path d="M 612 285 L 655 285 L 655 210" stroke="#22c55e" stroke-width="1.5" fill="none" stroke-dasharray="4,2" opacity="0.7" marker-end="url(#arrowG2)"/>
+
+          <!-- ESP32 → Relay CH3 (Valve) GPIO14 -->
+          <path d="M 612 300 L 660 300 L 660 215" stroke="#22c55e" stroke-width="1.5" fill="none" stroke-dasharray="4,2" opacity="0.7" marker-end="url(#arrowG2)"/>
+
+          <!-- ESP32 → Relay CH4 (Peltier) GPIO16 -->
+          <path d="M 612 315 L 665 315 L 665 220" stroke="#22c55e" stroke-width="1.5" fill="none" stroke-dasharray="4,2" opacity="0.7" marker-end="url(#arrowG2)"/>
+
+          <!-- === RELAY TO ACTUATORS (green power wires) === -->
+          <!-- Relay → UV Sterilizer -->
+          <path d="M 780 175 L 850 175 L 850 108 L 920 108" stroke="#22c55e" stroke-width="2" fill="none" opacity="0.7" marker-end="url(#arrowG2)"/>
+
+          <!-- Relay → Water Pump -->
+          <path d="M 780 190 L 855 190 L 855 215 L 920 215" stroke="#22c55e" stroke-width="2" fill="none" opacity="0.7" marker-end="url(#arrowG2)"/>
+
+          <!-- Relay → Solenoid Valve -->
+          <path d="M 780 205 L 860 205 L 860 330 L 920 330" stroke="#22c55e" stroke-width="2" fill="none" opacity="0.7" marker-end="url(#arrowG2)"/>
+
+          <!-- Relay → Peltier -->
+          <path d="M 780 220 L 865 220 L 865 445 L 920 445" stroke="#22c55e" stroke-width="2" fill="none" opacity="0.7" marker-end="url(#arrowG2)"/>
+
+          <!-- === ESP32 to A4988 Stepper Driver === -->
+          <path d="M 540 325 L 540 490 L 570 490" stroke="#f59e0b" stroke-width="1.5" fill="none" stroke-dasharray="4,2" opacity="0.6" marker-end="url(#arrowR2)"/>
+          <text x="530" y="415" text-anchor="middle" font-size="8" fill="#f59e0b" opacity="0.8" font-family="monospace" transform="rotate(-90,530,415)">STEP/DIR</text>
+
+          <!-- A4988 → Stepper Motor -->
+          <path d="M 690 530 L 730 530 L 730 560 L 920 560" stroke="#f59e0b" stroke-width="2" fill="none" opacity="0.7" marker-end="url(#arrowR2)"/>
+          <text x="820" y="548" text-anchor="middle" font-size="8.5" fill="#f59e0b" opacity="0.8" font-family="monospace">4-wire</text>
+
+          <!-- === USB Serial ESP32 ↔ RPi === -->
+          <path d="M 540 325 L 540 380" stroke="#3b82f6" stroke-width="2.5" fill="none" opacity="0.8" marker-end="url(#arrowB2)"/>
+          <path d="M 530 380 L 530 325" stroke="#94a3b8" stroke-width="1" fill="none" opacity="0.4" marker-end="url(#arrowGray)"/>
+          <rect x="505" y="340" width="50" height="18" rx="3" fill="#1e293b" opacity="0.85"/>
+          <text x="530" y="352" text-anchor="middle" font-size="8" fill="#94a3b8" font-family="monospace">USB-C</text>
+
+          <!-- Power from 12V rail to Relay module -->
+          <line x1="690" y1="32" x2="730" y2="32" stroke="#ef4444" stroke-width="1.5" opacity="0.5"/>
+          <line x1="730" y1="32" x2="730" y2="155" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.5" marker-end="url(#arrowR2)"/>
+
+          <!-- Power from 12V rail to A4988 -->
+          <line x1="630" y1="32" x2="630" y2="480" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,4" opacity="0.3" marker-end="url(#arrowR2)"/>
+
+          <!-- ═══════════════════════════════════════════ -->
+          <!-- COMPONENTS -->
+          <!-- ═══════════════════════════════════════════ -->
+
+          <!-- ====== LEFT SIDE: SENSORS ====== -->
+
+          <!-- Column header -->
+          <text x="95" y="38" text-anchor="middle" font-size="10" font-weight="700" fill="#64748b" font-family="monospace" letter-spacing="1">SENSORS</text>
+          <line x1="20" y1="44" x2="175" y2="44" stroke="#cbd5e1" stroke-width="0.75"/>
+
+          <!-- MQ-137 Ammonia Sensor -->
+          <g id="comp-mq137">
+            <rect x="20" y="70" width="158" height="76" rx="6" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
+            <rect x="20" y="70" width="158" height="18" rx="6" fill="#1e40af"/>
+            <rect x="20" y="82" width="158" height="6" rx="0" fill="#1e40af"/>
+            <text x="99" y="83" text-anchor="middle" font-size="9.5" font-weight="700" fill="#bfdbfe" font-family="monospace">MQ-137</text>
+            <!-- IC circles -->
+            <circle cx="55" cy="116" r="14" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+            <circle cx="55" cy="116" r="7" fill="#2563eb"/>
+            <circle cx="55" cy="116" r="3" fill="#93c5fd"/>
+            <!-- Pins -->
+            <line x1="20" y1="100" x2="10" y2="100" stroke="#fbbf24" stroke-width="2.5"/>
+            <line x1="20" y1="115" x2="10" y2="115" stroke="#ef4444" stroke-width="2.5"/>
+            <line x1="20" y1="130" x2="10" y2="130" stroke="#1d4ed8" stroke-width="2.5"/>
+            <text x="105" y="108" font-size="9" fill="#94a3b8" font-family="monospace">Ammonia</text>
+            <text x="105" y="121" font-size="9" fill="#94a3b8" font-family="monospace">MQ-137</text>
+            <text x="99" y="140" text-anchor="middle" font-size="12" font-weight="700" fill="#3b82f6" font-family="monospace" id="schem-nh3">-- raw</text>
+          </g>
+
+          <!-- DS18B20 Temp Sensor -->
+          <g id="comp-ds18b20">
+            <rect x="20" y="168" width="158" height="66" rx="6" fill="#0f172a" stroke="#22c55e" stroke-width="1.5"/>
+            <rect x="20" y="168" width="158" height="16" rx="6" fill="#14532d"/>
+            <rect x="20" y="178" width="158" height="6" rx="0" fill="#14532d"/>
+            <text x="99" y="181" text-anchor="middle" font-size="9.5" font-weight="700" fill="#bbf7d0" font-family="monospace">DS18B20</text>
+            <!-- Probe shape -->
+            <rect x="38" y="192" width="10" height="28" rx="5" fill="#1a3260"/>
+            <circle cx="43" cy="222" r="6" fill="#ef4444"/>
+            <!-- Pins -->
+            <line x1="20" y1="200" x2="10" y2="200" stroke="#fbbf24" stroke-width="2.5"/>
+            <line x1="20" y1="213" x2="10" y2="213" stroke="#ef4444" stroke-width="2.5"/>
+            <text x="105" y="203" font-size="9" fill="#94a3b8" font-family="monospace">Temperature</text>
+            <text x="105" y="216" font-size="9" fill="#94a3b8" font-family="monospace">1-Wire</text>
+            <text x="99" y="228" text-anchor="middle" font-size="12" font-weight="700" fill="#22c55e" font-family="monospace" id="schem-temp">-- °C</text>
+          </g>
+
+          <!-- Turbidity Sensor -->
+          <g id="comp-turbidity">
+            <rect x="20" y="262" width="158" height="72" rx="6" fill="#0f172a" stroke="#f59e0b" stroke-width="1.5"/>
+            <rect x="20" y="262" width="158" height="16" rx="6" fill="#78350f"/>
+            <rect x="20" y="272" width="158" height="6" rx="0" fill="#78350f"/>
+            <text x="99" y="275" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fde68a" font-family="monospace">TURBIDITY</text>
+            <!-- Sensor body -->
+            <rect x="30" y="286" width="36" height="34" rx="4" fill="#1c2a3d"/>
+            <circle cx="40" cy="303" r="5" fill="#fbbf24"/>
+            <circle cx="56" cy="303" r="5" fill="#3b82f6"/>
+            <!-- Pins -->
+            <line x1="20" y1="292" x2="10" y2="292" stroke="#fbbf24" stroke-width="2.5"/>
+            <line x1="20" y1="305" x2="10" y2="305" stroke="#ef4444" stroke-width="2.5"/>
+            <line x1="20" y1="318" x2="10" y2="318" stroke="#1d4ed8" stroke-width="2.5"/>
+            <text x="105" y="297" font-size="9" fill="#94a3b8" font-family="monospace">NTU sensor</text>
+            <text x="105" y="310" font-size="9" fill="#94a3b8" font-family="monospace">Analog out</text>
+            <text x="99" y="326" text-anchor="middle" font-size="12" font-weight="700" fill="#f59e0b" font-family="monospace" id="schem-turb">-- NTU</text>
+          </g>
+
+          <!-- YF-S201 Flow Sensor -->
+          <g id="comp-flow">
+            <rect x="20" y="362" width="158" height="72" rx="6" fill="#0f172a" stroke="#06b6d4" stroke-width="1.5"/>
+            <rect x="20" y="362" width="158" height="16" rx="6" fill="#164e63"/>
+            <rect x="20" y="372" width="158" height="6" rx="0" fill="#164e63"/>
+            <text x="99" y="375" text-anchor="middle" font-size="9.5" font-weight="700" fill="#a5f3fc" font-family="monospace">YF-S201</text>
+            <!-- Flow body -->
+            <rect x="26" y="386" width="44" height="36" rx="5" fill="#0e7490"/>
+            <rect x="14" y="396" width="14" height="14" rx="2" fill="#0891b2"/>
+            <rect x="66" y="396" width="14" height="14" rx="2" fill="#0891b2"/>
+            <circle cx="48" cy="403" r="7" fill="#22d3ee"/>
+            <!-- Pins -->
+            <line x1="20" y1="392" x2="10" y2="392" stroke="#fbbf24" stroke-width="2.5"/>
+            <line x1="20" y1="405" x2="10" y2="405" stroke="#ef4444" stroke-width="2.5"/>
+            <line x1="20" y1="418" x2="10" y2="418" stroke="#22c55e" stroke-width="2.5"/>
+            <text x="105" y="395" font-size="9" fill="#94a3b8" font-family="monospace">Flow rate</text>
+            <text x="105" y="408" font-size="9" fill="#94a3b8" font-family="monospace">Hall effect</text>
+            <text x="99" y="426" text-anchor="middle" font-size="12" font-weight="700" fill="#06b6d4" font-family="monospace" id="schem-flow">-- L/min</text>
+          </g>
+
+          <!-- Pi Camera -->
+          <g id="comp-picam">
+            <rect x="20" y="510" width="158" height="66" rx="6" fill="#0f172a" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3"/>
+            <rect x="20" y="510" width="158" height="16" rx="6" fill="#451a03"/>
+            <rect x="20" y="520" width="158" height="6" rx="0" fill="#451a03"/>
+            <text x="99" y="523" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fde68a" font-family="monospace">PI CAMERA</text>
+            <!-- Camera lens -->
+            <circle cx="50" cy="548" r="12" fill="#1c1917"/>
+            <circle cx="50" cy="548" r="8" fill="#1e3a5f"/>
+            <circle cx="50" cy="548" r="4" fill="#334155"/>
+            <circle cx="50" cy="548" r="1.5" fill="#e2e8f0"/>
+            <text x="105" y="543" font-size="9" fill="#94a3b8" font-family="monospace">AI Detection</text>
+            <text x="105" y="556" font-size="9" fill="#94a3b8" font-family="monospace">Roboflow/YOLO</text>
+            <text x="99" y="568" text-anchor="middle" font-size="11" font-weight="700" fill="#f59e0b" font-family="monospace" id="schemCamBadge2">◌ IDLE</text>
+          </g>
+
+          <!-- ====== CENTER: CONTROL UNITS ====== -->
+
+          <!-- Column header -->
+          <text x="510" y="38" text-anchor="middle" font-size="10" font-weight="700" fill="#64748b" font-family="monospace" letter-spacing="1">CONTROL UNITS</text>
+          <line x1="310" y1="44" x2="720" y2="44" stroke="#cbd5e1" stroke-width="0.75"/>
+
+          <!-- ESP32 DevKit board -->
+          <g id="comp-esp32">
+            <!-- PCB body -->
+            <rect x="390" y="190" width="220" height="150" rx="8" fill="#1a3a1a" stroke="#22c55e" stroke-width="2"/>
+            <!-- Board edge detail -->
+            <rect x="390" y="190" width="220" height="10" rx="4" fill="#143214"/>
+            <!-- Chip -->
+            <rect x="450" y="220" width="80" height="60" rx="4" fill="#111" stroke="#334155" stroke-width="1"/>
+            <rect x="462" y="232" width="56" height="36" rx="2" fill="#1e293b"/>
+            <text x="490" y="250" text-anchor="middle" font-size="8.5" font-weight="700" fill="#22c55e" font-family="monospace">ESP32</text>
+            <text x="490" y="262" text-anchor="middle" font-size="7.5" fill="#64748b" font-family="monospace">240MHz</text>
+            <!-- GPIO pin headers (left) -->
+            <rect x="393" y="200" width="8" height="132" rx="2" fill="#374151"/>
+            <line x1="397" y1="210" x2="397" y2="324" stroke="#fbbf24" stroke-width="0.5" stroke-dasharray="3,4" opacity="0.5"/>
+            <!-- GPIO pin headers (right) -->
+            <rect x="599" y="200" width="8" height="132" rx="2" fill="#374151"/>
+            <!-- Antenna -->
+            <rect x="580" y="193" width="28" height="8" rx="2" fill="#22c55e" opacity="0.7"/>
+            <text x="594" y="200" text-anchor="middle" font-size="7" fill="#86efac" font-family="monospace">ANT</text>
+            <!-- USB port indicator -->
+            <rect x="490" y="335" width="20" height="8" rx="2" fill="#94a3b8"/>
+            <text x="500" y="347" text-anchor="middle" font-size="7.5" fill="#64748b" font-family="monospace">USB</text>
+            <!-- Status indicator -->
+            <circle cx="410" cy="205" r="4" fill="#22c55e" id="schem-esp32-dot" opacity="0.4"/>
+            <text x="424" y="209" font-size="8" fill="#64748b" font-family="monospace" id="schemEsp32Status2">Offline</text>
+            <!-- Board label -->
+            <text x="500" y="360" text-anchor="middle" font-size="9" font-weight="700" fill="#22c55e" font-family="monospace">ESP32 DevKit</text>
+          </g>
+
+          <!-- 4-Channel Relay Module -->
+          <g id="comp-relay">
+            <rect x="650" y="155" width="130" height="120" rx="6" fill="#1c2a3d" stroke="#3b82f6" stroke-width="2"/>
+            <rect x="650" y="155" width="130" height="14" rx="4" fill="#1e3a5f"/>
+            <text x="715" y="166" text-anchor="middle" font-size="9" font-weight="700" fill="#93c5fd" font-family="monospace">RELAY 4CH</text>
+            <!-- 4 relay channels side by side -->
+            <rect x="657" y="175" width="26" height="42" rx="3" fill="#0f172a" stroke="#3b82f6" stroke-width="1" id="relay-ch1-schem"/>
+            <rect x="688" y="175" width="26" height="42" rx="3" fill="#0f172a" stroke="#3b82f6" stroke-width="1" id="relay-ch2-schem"/>
+            <rect x="719" y="175" width="26" height="42" rx="3" fill="#0f172a" stroke="#3b82f6" stroke-width="1" id="relay-ch3-schem"/>
+            <rect x="750" y="175" width="26" height="42" rx="3" fill="#0f172a" stroke="#3b82f6" stroke-width="1" id="relay-ch4-schem"/>
+            <!-- Relay coil symbols -->
+            <rect x="661" y="182" width="18" height="12" rx="1" fill="#1e3a5f"/>
+            <rect x="692" y="182" width="18" height="12" rx="1" fill="#1e3a5f"/>
+            <rect x="723" y="182" width="18" height="12" rx="1" fill="#1e3a5f"/>
+            <rect x="754" y="182" width="18" height="12" rx="1" fill="#1e3a5f"/>
+            <!-- LED indicators -->
+            <circle cx="670" cy="205" r="3.5" fill="#374151" id="relay-led1"/>
+            <circle cx="701" cy="205" r="3.5" fill="#374151" id="relay-led2"/>
+            <circle cx="732" cy="205" r="3.5" fill="#374151" id="relay-led3"/>
+            <circle cx="763" cy="205" r="3.5" fill="#374151" id="relay-led4"/>
+            <!-- Channel labels -->
+            <text x="670" y="215" text-anchor="middle" font-size="7" fill="#64748b" font-family="monospace">UV</text>
+            <text x="701" y="215" text-anchor="middle" font-size="7" fill="#64748b" font-family="monospace">PMP</text>
+            <text x="732" y="215" text-anchor="middle" font-size="7" fill="#64748b" font-family="monospace">VLV</text>
+            <text x="763" y="215" text-anchor="middle" font-size="7" fill="#64748b" font-family="monospace">PLT</text>
+            <!-- Screw terminals -->
+            <rect x="657" y="222" width="26" height="10" rx="1" fill="#374151"/>
+            <rect x="688" y="222" width="26" height="10" rx="1" fill="#374151"/>
+            <rect x="719" y="222" width="26" height="10" rx="1" fill="#374151"/>
+            <rect x="750" y="222" width="26" height="10" rx="1" fill="#374151"/>
+            <!-- Screw dots -->
+            <circle cx="667" cy="227" r="2" fill="#1c2a3d"/><circle cx="676" cy="227" r="2" fill="#1c2a3d"/>
+            <circle cx="698" cy="227" r="2" fill="#1c2a3d"/><circle cx="707" cy="227" r="2" fill="#1c2a3d"/>
+            <circle cx="729" cy="227" r="2" fill="#1c2a3d"/><circle cx="738" cy="227" r="2" fill="#1c2a3d"/>
+            <circle cx="760" cy="227" r="2" fill="#1c2a3d"/><circle cx="769" cy="227" r="2" fill="#1c2a3d"/>
+            <!-- GND/VCC pins -->
+            <text x="715" y="265" text-anchor="middle" font-size="8" fill="#64748b" font-family="monospace">5V · GND · IN1-4</text>
+          </g>
+
+          <!-- Raspberry Pi 5 -->
+          <g id="comp-raspi">
+            <rect x="390" y="380" width="220" height="130" rx="8" fill="#3d0b0b" stroke="#f59e0b" stroke-width="2"/>
+            <rect x="390" y="380" width="220" height="10" rx="4" fill="#2d0808"/>
+            <!-- CPU chip -->
+            <rect x="440" y="400" width="70" height="50" rx="3" fill="#111" stroke="#334155" stroke-width="1"/>
+            <rect x="450" y="410" width="50" height="30" rx="2" fill="#1e293b"/>
+            <text x="475" y="424" text-anchor="middle" font-size="8" font-weight="700" fill="#f59e0b" font-family="monospace">BCM2712</text>
+            <text x="475" y="435" text-anchor="middle" font-size="7.5" fill="#64748b" font-family="monospace">RPi 5 4GB</text>
+            <!-- GPIO header -->
+            <rect x="393" y="388" width="8" height="110" rx="2" fill="#374151"/>
+            <!-- USB ports -->
+            <rect x="595" y="396" width="18" height="22" rx="2" fill="#334155"/>
+            <rect x="595" y="424" width="18" height="22" rx="2" fill="#334155"/>
+            <!-- HDMI -->
+            <rect x="565" y="497" width="22" height="12" rx="2" fill="#1c2a3d"/>
+            <!-- USB-C power -->
+            <rect x="390" y="480" width="14" height="12" rx="2" fill="#94a3b8"/>
+            <!-- Status LEDs -->
+            <circle cx="410" cy="393" r="3.5" fill="#22c55e" opacity="0.7"/>
+            <circle cx="422" cy="393" r="3.5" fill="#ef4444" opacity="0.5"/>
+            <!-- Stack labels -->
+            <text x="500" y="472" text-anchor="middle" font-size="8" fill="#f59e0b" font-family="monospace">Python · Node.js · MongoDB</text>
+            <text x="500" y="500" text-anchor="middle" font-size="9" font-weight="700" fill="#f59e0b" font-family="monospace">Raspberry Pi 5</text>
+          </g>
+
+          <!-- A4988 Stepper Driver -->
+          <g id="comp-a4988">
+            <rect x="570" y="460" width="120" height="70" rx="5" fill="#1c1917" stroke="#f59e0b" stroke-width="1.5"/>
+            <rect x="570" y="460" width="120" height="12" rx="4" fill="#292524"/>
+            <text x="630" y="470" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fde68a" font-family="monospace">A4988</text>
+            <!-- IC body -->
+            <rect x="590" y="478" width="60" height="30" rx="2" fill="#111" stroke="#44403c" stroke-width="1"/>
+            <text x="620" y="497" text-anchor="middle" font-size="7.5" fill="#a8a29e" font-family="monospace">STEP DRIVER</text>
+            <!-- Pins -->
+            <rect x="574" y="474" width="6" height="50" fill="#374151" rx="1"/>
+            <rect x="680" y="474" width="6" height="50" fill="#374151" rx="1"/>
+            <text x="630" y="522" text-anchor="middle" font-size="7.5" fill="#64748b" font-family="monospace">1/8 microstepping</text>
+          </g>
+
+          <!-- ====== RIGHT SIDE: ACTUATORS ====== -->
+
+          <!-- Column header -->
+          <text x="1005" y="38" text-anchor="middle" font-size="10" font-weight="700" fill="#64748b" font-family="monospace" letter-spacing="1">ACTUATORS</text>
+          <line x1="910" y1="44" x2="1090" y2="44" stroke="#cbd5e1" stroke-width="0.75"/>
+
+          <!-- UV Sterilizer -->
+          <g id="schem2-act-uv">
+            <rect x="920" y="72" width="165" height="72" rx="6" fill="#0f0c1a" stroke="#a78bfa" stroke-width="1.5" id="act-border-uv"/>
+            <rect x="920" y="72" width="165" height="14" rx="4" fill="#3b0764"/>
+            <text x="1002" y="83" text-anchor="middle" font-size="9.5" font-weight="700" fill="#ddd6fe" font-family="monospace">UV STERILIZER</text>
+            <!-- UV tube shape -->
+            <rect x="932" y="93" width="90" height="14" rx="7" fill="#e2e8f0"/>
+            <rect x="934" y="95" width="86" height="10" rx="5" fill="#c4b5fd" opacity="0.7"/>
+            <rect x="920" y="96" width="14" height="8" rx="2" fill="#94a3b8"/>
+            <rect x="1018" y="96" width="14" height="8" rx="2" fill="#94a3b8"/>
+            <text x="1002" y="122" text-anchor="middle" font-size="8.5" fill="#a78bfa" font-family="monospace" id="schem2-uv-state">● OFF</text>
+            <text x="1042" y="97" font-size="8" fill="#64748b" font-family="monospace">220V AC</text>
+          </g>
+
+          <!-- Submersible Pump -->
+          <g id="schem2-act-pump">
+            <rect x="920" y="182" width="165" height="72" rx="6" fill="#0a1628" stroke="#3b82f6" stroke-width="1.5" id="act-border-pump"/>
+            <rect x="920" y="182" width="165" height="14" rx="4" fill="#1e3a5f"/>
+            <text x="1002" y="193" text-anchor="middle" font-size="9.5" font-weight="700" fill="#bfdbfe" font-family="monospace">WATER PUMP</text>
+            <!-- Pump body -->
+            <circle cx="955" cy="218" r="14" fill="#1e40af"/>
+            <circle cx="955" cy="218" r="8" fill="#2563eb"/>
+            <circle cx="955" cy="218" r="3" fill="#93c5fd"/>
+            <!-- Outlet -->
+            <rect x="969" y="214" width="20" height="8" rx="2" fill="#1d4ed8"/>
+            <text x="1020" y="212" font-size="8" fill="#64748b" font-family="monospace">12V DC</text>
+            <text x="1002" y="238" text-anchor="middle" font-size="8.5" fill="#3b82f6" font-family="monospace" id="schem2-pump-state">● OFF</text>
+          </g>
+
+          <!-- Solenoid Valve -->
+          <g id="schem2-act-valve">
+            <rect x="920" y="298" width="165" height="72" rx="6" fill="#111827" stroke="#94a3b8" stroke-width="1.5" id="act-border-valve"/>
+            <rect x="920" y="298" width="165" height="14" rx="4" fill="#1f2937"/>
+            <text x="1002" y="309" text-anchor="middle" font-size="9.5" font-weight="700" fill="#e5e7eb" font-family="monospace">SOLENOID VALVE</text>
+            <!-- Valve body -->
+            <rect x="930" y="318" width="48" height="28" rx="3" fill="#374151"/>
+            <rect x="920" y="325" width="14" height="14" rx="2" fill="#4b5563"/>
+            <rect x="974" y="325" width="14" height="14" rx="2" fill="#4b5563"/>
+            <circle cx="954" cy="316" r="6" fill="#f59e0b"/>
+            <rect x="952" y="316" width="4" height="8" fill="#d97706"/>
+            <text x="1020" y="328" font-size="8" fill="#64748b" font-family="monospace">12V DC</text>
+            <text x="1002" y="354" text-anchor="middle" font-size="8.5" fill="#94a3b8" font-family="monospace" id="schem2-valve-state">● CLOSED</text>
+          </g>
+
+          <!-- Peltier Cooler -->
+          <g id="schem2-act-peltier">
+            <rect x="920" y="412" width="165" height="72" rx="6" fill="#0a1f2a" stroke="#06b6d4" stroke-width="1.5" id="act-border-peltier"/>
+            <rect x="920" y="412" width="165" height="14" rx="4" fill="#0e4a5e"/>
+            <text x="1002" y="423" text-anchor="middle" font-size="9.5" font-weight="700" fill="#a5f3fc" font-family="monospace">PELTIER TEC</text>
+            <!-- TEC module -->
+            <rect x="930" y="430" width="52" height="36" rx="2" fill="#0e7490"/>
+            <rect x="930" y="430" width="52" height="6" rx="1" fill="#e2e8f0"/>
+            <rect x="930" y="460" width="52" height="6" rx="1" fill="#1e3a5f"/>
+            <rect x="934" y="436" width="8" height="24" rx="1" fill="#ef4444"/>
+            <rect x="946" y="436" width="8" height="24" rx="1" fill="#3b82f6"/>
+            <rect x="958" y="436" width="8" height="24" rx="1" fill="#ef4444"/>
+            <text x="1020" y="444" font-size="8" fill="#64748b" font-family="monospace">12V DC</text>
+            <text x="1002" y="468" text-anchor="middle" font-size="8.5" fill="#06b6d4" font-family="monospace" id="schem2-peltier-state">● OFF</text>
+          </g>
+
+          <!-- Stepper Motor -->
+          <g id="schem2-act-motor">
+            <rect x="920" y="527" width="165" height="72" rx="6" fill="#1c1a12" stroke="#f59e0b" stroke-width="1.5"/>
+            <rect x="920" y="527" width="165" height="14" rx="4" fill="#2d2006"/>
+            <text x="1002" y="538" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fde68a" font-family="monospace">STEPPER MOTOR</text>
+            <!-- Motor body -->
+            <rect x="930" y="547" width="48" height="42" rx="4" fill="#1c2a3d"/>
+            <circle cx="954" cy="568" r="12" fill="#374151"/>
+            <circle cx="954" cy="568" r="5" fill="#94a3b8"/>
+            <rect x="954" y="535" width="4" height="14" rx="2" fill="#94a3b8"/>
+            <text x="1020" y="561" font-size="8" fill="#64748b" font-family="monospace">12V 2A</text>
+            <text x="1002" y="578" text-anchor="middle" font-size="8.5" fill="#f59e0b" font-family="monospace" id="schem2-motor-state">● IDLE</text>
+            <!-- 4 wires -->
+            <line x1="920" y1="553" x2="908" y2="553" stroke="#f59e0b" stroke-width="2"/>
+            <line x1="920" y1="560" x2="908" y2="560" stroke="#fbbf24" stroke-width="2"/>
+            <line x1="920" y1="567" x2="908" y2="567" stroke="#ef4444" stroke-width="2"/>
+            <line x1="920" y1="574" x2="908" y2="574" stroke="#3b82f6" stroke-width="2"/>
+          </g>
+
+          <!-- ====== JUNCTION DOTS (wire solder points) ====== -->
+          <circle cx="370" cy="108" r="3.5" fill="#3b82f6" opacity="0.8"/>
+          <circle cx="350" cy="198" r="3.5" fill="#3b82f6" opacity="0.8"/>
+          <circle cx="355" cy="298" r="3.5" fill="#f59e0b" opacity="0.8"/>
+          <circle cx="340" cy="398" r="3.5" fill="#06b6d4" opacity="0.8"/>
+          <circle cx="540" cy="325" r="4" fill="#3b82f6" opacity="0.9"/>
+          <circle cx="650" cy="270" r="3" fill="#22c55e" opacity="0.8"/>
+          <circle cx="730" cy="32" r="3.5" fill="#ef4444" opacity="0.7"/>
+          <circle cx="850" cy="108" r="3.5" fill="#22c55e" opacity="0.8"/>
+          <circle cx="855" cy="215" r="3.5" fill="#22c55e" opacity="0.8"/>
+          <circle cx="860" cy="330" r="3.5" fill="#22c55e" opacity="0.8"/>
+          <circle cx="865" cy="445" r="3.5" fill="#22c55e" opacity="0.8"/>
+          <circle cx="730" cy="530" r="3.5" fill="#f59e0b" opacity="0.8"/>
+
+          <!-- ====== MODE LABEL ====== -->
+          <rect x="420" y="620" width="260" height="28" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+          <text x="550" y="638" text-anchor="middle" font-size="10" fill="#64748b" font-family="monospace" id="schemModeNote2">🤖 Automated — sensors control actuators</text>
+
+        </svg>
+
+        </div><!-- /schem-svg-wrapper -->
+
+        <!-- ── Actuator control bars — sit OUTSIDE the SVG, above each actuator row ── -->
+        <div id="schem-act-controls" style="
+  position:absolute; top:0; right:0;
+  width:15.5%; height:100%;
+  pointer-events:none;
+  box-sizing:border-box;
+">
+          <!-- UV: y=72/720 = 10% -->
+  <div style="position:absolute; top:calc(10% + 10px); right:40px; width:90%; pointer-events:all;">
+    <div class="act-overlay">
+      <div class="act-overlay-btns">
+        <button class="s-btn s-btn-on  schem-manual-btn" id="sob-uv-on"  onclick="sendControl('UV_ON')"  disabled>ON</button>
+        <button class="s-btn s-btn-off schem-manual-btn" id="sob-uv-off" onclick="sendControl('UV_OFF')" disabled>OFF</button>
+      </div>
+      <span class="s-state-badge" id="sob-uv-badge" style="color:#a78bfa;background:rgba(167,139,250,0.1);border-color:rgba(167,139,250,0.25);">● OFF</span>
     </div>
+  </div>
+
+  <!-- PUMP: y=182/720 = 25.3% -->
+  <div style="position:absolute; top:calc(25.3% - 3px); right:40px; width:90%; pointer-events:all;">
+    <div class="act-overlay">
+      <div class="act-overlay-btns">
+        <button class="s-btn s-btn-on  schem-manual-btn" id="sob-pump-on"  onclick="sendControl('PUMP_ON')"  disabled>ON</button>
+        <button class="s-btn s-btn-off schem-manual-btn" id="sob-pump-off" onclick="sendControl('PUMP_OFF')" disabled>OFF</button>
+      </div>
+      <span class="s-state-badge" id="sob-pump-badge" style="color:#3b82f6;background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.25);">● OFF</span>
+    </div>
+  </div>
+
+  <!-- VALVE: y=298/720 = 41.4% -->
+  <div style="position:absolute; top:calc(41.4% - 15px); right:40px; width:90%; pointer-events:all;">
+    <div class="act-overlay">
+      <div class="act-overlay-btns">
+        <button class="s-btn s-btn-on  schem-manual-btn" id="sob-valve-on"  onclick="sendControl('VALVE_ON')"  disabled>OPEN</button>
+        <button class="s-btn s-btn-off schem-manual-btn" id="sob-valve-off" onclick="sendControl('VALVE_OFF')" disabled>CLOSE</button>
+      </div>
+      <span class="s-state-badge" id="sob-valve-badge" style="color:#94a3b8;background:rgba(148,163,184,0.1);border-color:rgba(148,163,184,0.25);">● CLOSED</span>
+    </div>
+  </div>
+
+  <!-- PELTIER: y=412/720 = 57.2% -->
+  <div style="position:absolute; top:calc(57.2% - 29px); right:40px; width:90%; pointer-events:all;">
+    <div class="act-overlay">
+      <div class="act-overlay-btns">
+        <button class="s-btn s-btn-on  schem-manual-btn" id="sob-pelt-on"  onclick="sendControl('COOL_MAX')" disabled>ON</button>
+        <button class="s-btn s-btn-off schem-manual-btn" id="sob-pelt-off" onclick="sendControl('COOL_OFF')" disabled>OFF</button>
+      </div>
+      <span class="s-state-badge" id="sob-pelt-badge" style="color:#06b6d4;background:rgba(6,182,212,0.1);border-color:rgba(6,182,212,0.25);">● OFF</span>
+    </div>
+  </div>
+
+  <!-- MOTOR: y=527/720 = 73.2% -->
+  <div style="position:absolute; top:calc(73.2% - 42px); right:40px; width:90%; pointer-events:all;">
+    <div class="act-overlay">
+      <div class="act-overlay-btns">
+        <button class="s-btn s-btn-on" id="sob-motor-cw"  onclick="schemRunMotor2('CW')"  style="border-color:rgba(245,158,11,0.5);background:rgba(245,158,11,0.1);color:#f59e0b;">▶ CW</button>
+        <button class="s-btn s-btn-off" id="sob-motor-ccw" onclick="schemRunMotor2('CCW')" style="border-color:rgba(245,158,11,0.5);background:rgba(245,158,11,0.08);color:#f59e0b;">◀ CCW</button>
+      </div>
+      <span class="s-state-badge" id="sob-motor-badge" style="color:#f59e0b;background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.25);">● IDLE</span>
+    </div>
+  </div>
+</div>
+
+        <div class="schem2-legend">
+          <span><div class="lw lw-blue"></div> Signal / Serial (ESP32)</span>
+          <span><div class="lw lw-green"></div> Actuator control</span>
+          <span><div class="lw lw-red"></div> 12V power</span>
+          <span><div class="lw lw-gray"></div> Common GND</span>
+          <span style="margin-left:auto;color:var(--muted);font-size:10px;">⚠ Switch to Manual in Actuators page to enable controls</span>
+        </div>
+      </div>
+
+    </div><!-- /section-schematic -->
+
+    <script>
+    // Hook into existing pollWater to also update schematic v2
+    const _origUpdateSchematic = typeof updateSchematic === 'function' ? updateSchematic : null;
+
+    function updateSchematic2(waterStatus, detectionStatus) {
+      if (!waterStatus) return;
+      const s = waterStatus;
+      const esp = !!s.connected;
+
+      // ESP32 dot
+      const dot2 = document.getElementById('schem-esp32-dot');
+      const lbl2 = document.getElementById('schemEsp32Status2');
+      if (dot2) dot2.setAttribute('opacity', esp ? '1' : '0.25');
+      if (lbl2) { lbl2.textContent = esp ? 'Online' : 'Offline'; lbl2.setAttribute('fill', esp ? '#22c55e' : '#ef4444'); }
+
+      // Sensor values
+      const nh3El2 = document.getElementById('schem-nh3');
+      const tmpEl2 = document.getElementById('schem-temp');
+      const trbEl2 = document.getElementById('schem-turb');
+      const flwEl2 = document.getElementById('schem-flow');
+      if (nh3El2) nh3El2.textContent = s.ammonia_raw !== null ? s.ammonia_raw + ' raw' : '-- raw';
+      if (tmpEl2) tmpEl2.textContent = s.temperature_c !== null ? parseFloat(s.temperature_c).toFixed(1) + ' °C' : '-- °C';
+      if (trbEl2) trbEl2.textContent = s.turbidity_ntu !== null ? s.turbidity_ntu + ' NTU' : '-- NTU';
+      if (flwEl2) flwEl2.textContent = s.flow_lpm !== null ? parseFloat(s.flow_lpm).toFixed(2) + ' L/min' : '-- L/min';
+
+      // Camera badge
+      const camB2 = document.getElementById('schemCamBadge2');
+      if (camB2 && detectionStatus) {
+        if (detectionStatus.scanning) { camB2.textContent = '⟳ SCANNING'; camB2.setAttribute('fill', '#3b82f6'); }
+        else if (detectionStatus.detected) { camB2.textContent = '🦞 DETECTED'; camB2.setAttribute('fill', '#22c55e'); }
+        else { camB2.textContent = '◌ IDLE'; camB2.setAttribute('fill', '#f59e0b'); }
+      }
+
+      // Actuator states
+      const pumpOn2   = (s.pump_state||'').toUpperCase()==='ON';
+      const uvOn2     = (s.uv_state||'').toUpperCase()==='ON';
+      const valveOn2  = (s.valve_state||'').toUpperCase()==='OPEN';
+      const peltOn2   = (s.peltier_state||'').toUpperCase()==='ON';
+
+      function setSchem2Act(stateId, borderId, on, onTxt, offTxt, onColor, offColor, borderOnColor, borderOffColor) {
+        const stEl = document.getElementById(stateId);
+        const bEl  = document.getElementById(borderId);
+        if (stEl) { stEl.textContent = esp ? (on ? '● '+onTxt : '● '+offTxt) : '● Offline'; stEl.setAttribute('fill', esp && on ? onColor : (esp ? offColor : '#ef4444')); }
+        if (bEl)  { bEl.setAttribute('stroke', esp && on ? borderOnColor : borderOffColor); bEl.setAttribute('stroke-width', esp && on ? '2.5' : '1.5'); }
+      }
+      setSchem2Act('schem2-uv-state',     'act-border-uv',     uvOn2,   'ON','OFF',   '#a78bfa','#64748b','#a78bfa','#4c1d95');
+      setSchem2Act('schem2-pump-state',   'act-border-pump',   pumpOn2, 'ON','OFF',   '#3b82f6','#64748b','#3b82f6','#1e3a5f');
+      setSchem2Act('schem2-valve-state',  'act-border-valve',  valveOn2,'OPEN','CLOSED','#22c55e','#64748b','#22c55e','#374151');
+      setSchem2Act('schem2-peltier-state','act-border-peltier',peltOn2, 'ON','OFF',   '#06b6d4','#64748b','#06b6d4','#0e4a5e');
+
+      // Relay LEDs
+      const ledStates = [uvOn2, pumpOn2, valveOn2, peltOn2];
+      const ledColors = ['#a78bfa', '#3b82f6', '#22c55e', '#06b6d4'];
+      [1,2,3,4].forEach((i) => {
+        const led = document.getElementById('relay-led' + i);
+        const ch  = document.getElementById('relay-ch' + i + '-schem');
+        if (led) led.setAttribute('fill', esp && ledStates[i-1] ? ledColors[i-1] : '#374151');
+        if (ch)  ch.setAttribute('stroke', esp && ledStates[i-1] ? ledColors[i-1] : '#3b82f6');
+      });
+
+      // Overlay button state badges
+      function setSobBadge(badgeId, on, onTxt, offTxt, onColor, offColor) {
+        const el = document.getElementById(badgeId);
+        if (!el) return;
+        el.textContent = esp ? (on ? '● '+onTxt : '● '+offTxt) : '● Offline';
+        el.style.color = esp && on ? onColor : (esp ? offColor : '#ef4444');
+      }
+      setSobBadge('sob-uv-badge',    uvOn2,   'ON',    'OFF',    '#a78bfa', '#64748b');
+      setSobBadge('sob-pump-badge',  pumpOn2, 'ON',    'OFF',    '#3b82f6', '#64748b');
+      setSobBadge('sob-valve-badge', valveOn2,'OPEN',  'CLOSED', '#22c55e', '#64748b');
+      setSobBadge('sob-pelt-badge',  peltOn2, 'ON',    'OFF',    '#06b6d4', '#64748b');
+
+      // Enable/disable overlay buttons based on mode
+      document.querySelectorAll('.schem-manual-btn').forEach(b => { b.disabled = currentAutoMode; });
+
+      // Mode badge
+      const mb2   = document.getElementById('schemModeBadge2');
+      const note2 = document.getElementById('schemModeNote2');
+      if (mb2) {
+        mb2.textContent = currentAutoMode ? '🤖 AUTOMATED' : '🕹️ MANUAL';
+        mb2.style.color = currentAutoMode ? 'var(--accent2)' : 'var(--warn)';
+        mb2.style.background = currentAutoMode ? 'rgba(0,179,126,0.1)' : 'rgba(245,158,11,0.1)';
+        mb2.style.borderColor = currentAutoMode ? 'rgba(0,179,126,0.3)' : 'rgba(245,158,11,0.3)';
+      }
+      if (note2) note2.textContent = currentAutoMode ? '🤖 Automated — sensors control actuators' : '🕹️ Manual — dashboard has full control';
+    }
+
+    async function schemRunMotor2(dir) {
+      const badge = document.getElementById('sob-motor-badge');
+      const cwBtn  = document.getElementById('sob-motor-cw');
+      const ccwBtn = document.getElementById('sob-motor-ccw');
+      if (cwBtn) cwBtn.disabled = true;
+      if (ccwBtn) ccwBtn.disabled = true;
+      if (badge) { badge.textContent = '● Running…'; badge.style.color = '#fbbf24'; }
+      try {
+        const res = await fetch(API_BASE + '/api/motor/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ steps: 200, direction: dir })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          if (badge) { badge.textContent = '● Done ✓'; badge.style.color = '#22c55e'; }
+          showToast('⚙ Motor: 200 steps ' + dir, 'success', 2500);
+        }
+      } catch(_) {
+        if (badge) { badge.textContent = '● Error'; badge.style.color = '#ef4444'; }
+      } finally {
+        setTimeout(() => {
+          if (cwBtn)  cwBtn.disabled  = false;
+          if (ccwBtn) ccwBtn.disabled = false;
+          if (badge)  { badge.textContent = '● IDLE'; badge.style.color = '#f59e0b'; }
+        }, 2500);
+      }
+    }
+
+    // Patch the existing pollWater to also call updateSchematic2
+    const _origPollWater = pollWater;
+    // Instead, override updateSchematic to also call v2
+    const _origUpdateSchematicFn = window.updateSchematic;
+    window.updateSchematic = function(waterStatus, detectionStatus) {
+      if (_origUpdateSchematicFn) _origUpdateSchematicFn(waterStatus, detectionStatus);
+      updateSchematic2(waterStatus, detectionStatus);
+    };
+    </script>
 
     <!-- ══ EVENT LOG ══ -->
     <div class="page-section" id="section-eventlog">
@@ -2737,11 +2634,31 @@ app.get('/', (req, res) => {
       });
       const data = await res.json();
       if (!data.ok) {
-        showToast('Server blocked: ' + (data.error || action), 'error', 3500);
-        return;
+       showToast('Server blocked: ' + (data.error || action), 'error', 3500);
+      const cmdLogEl2 = document.getElementById('schemCmdLog');
+      if (cmdLogEl2) {
+        const t = new Date().toTimeString().slice(0,8);
+        const entry = document.createElement('div');
+        entry.innerHTML = '<span style="color:#3b82f6;opacity:0.7">' + t + '</span>  <span style="color:#ef4444;">✕</span>  <span style="color:#fca5a5;">BLOCKED: ' + action + '</span>';
+        if (cmdLogEl2.querySelector('span[style*="334155"]')) cmdLogEl2.innerHTML = '';
+        cmdLogEl2.appendChild(entry);
+        cmdLogEl2.scrollTop = cmdLogEl2.scrollHeight;
+      }
+      return;
       }
       addLog('⚙ Control: ' + action, 'ok');
       showToast('⚙ Sent: ' + action, 'success', 2500);
+      // Also log to schematic command log
+      const cmdLogEl = document.getElementById('schemCmdLog');
+      if (cmdLogEl) {
+        const t = new Date().toTimeString().slice(0,8);
+        const entry = document.createElement('div');
+        entry.innerHTML = '<span style="color:#3b82f6;opacity:0.7">' + t + '</span>  <span style="color:#22c55e;">⚙</span>  <span style="color:#e2e8f0;">' + action + '</span>';
+        // Clear placeholder if present
+        if (cmdLogEl.querySelector('span[style*="334155"]')) cmdLogEl.innerHTML = '';
+        cmdLogEl.appendChild(entry);
+        cmdLogEl.scrollTop = cmdLogEl.scrollHeight;
+      }
       setTimeout(pollWater, 800);
     } catch (_) {
       showToast('Command failed — check connection', 'error', 3000);
