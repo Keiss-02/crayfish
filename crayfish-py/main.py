@@ -10,7 +10,6 @@ import urllib.parse
 import urllib.request
 import requests
 from dotenv import load_dotenv
-import threading
 
 from serial_broker import MOTOR_CMD_FILE, esp32_ping, poll_command_file, send_esp32_move
 from water_monitor import WaterMonitor
@@ -626,12 +625,11 @@ def watch_tank():
             and not detection_running):
 
 
-                print(f"[MOTION] {movement}px — saving snapshot & spawning detection…")
+                print(f"[MOTION] {movement}px — queuing detection (snapshot saved in thread)…")
 
-                tmp_snap = snapshot_file + ".tmp"
-                imwrite(tmp_snap, frame_bgr.copy())
-                os.replace(tmp_snap, snapshot_file)
-                last_snapshot_ts = time.time()
+                # Capture the frame now but save the snapshot inside the
+                # detection thread so it doesn't block the camera loop.
+                detection_frame = frame_bgr.copy()
 
                 write_status(False, scanning=True,
                              note="Motion detected — scanning…",
@@ -640,9 +638,17 @@ def watch_tank():
                 last_detection_check = time.time()
                 detection_running    = True
 
+                def _detection_with_snapshot(f, mv):
+                    global last_snapshot_ts
+                    tmp_snap = snapshot_file + ".tmp"
+                    imwrite(tmp_snap, f)
+                    os.replace(tmp_snap, snapshot_file)
+                    last_snapshot_ts = time.time()
+                    run_detection(f, mv)
+
                 threading.Thread(
-                    target=run_detection,
-                    args=(frame_bgr.copy(), movement),
+                    target=_detection_with_snapshot,
+                    args=(detection_frame, movement),
                     daemon=True
                 ).start()
 

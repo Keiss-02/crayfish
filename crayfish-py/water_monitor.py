@@ -76,13 +76,14 @@ def handle_water_command(command, status):
         return status
 
     # Map dashboard actions to ESP32 commands
+    # ESP32 firmware uses COOL_MAX / COOL_OFF for Peltier (not PELTIER_ON/OFF)
     action_to_cmd = {
         "uv_on":    "UV_ON",
         "uv_off":   "UV_OFF",
         "valve_on": "VALVE_ON",
         "valve_off":"VALVE_OFF",
-        "cool_max": "PELTIER_ON",
-        "cool_off": "PELTIER_OFF",
+        "cool_max": "COOL_MAX",
+        "cool_off": "COOL_OFF",
         "pump_on":  "PUMP_ON",
         "pump_off": "PUMP_OFF",
         "reset_override":  "RESET_OVERRIDE",

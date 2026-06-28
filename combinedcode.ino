@@ -34,8 +34,10 @@ bool overridePeltier  = false;
 bool overrideValve    = false;
 
 // ================= AMMONIA THRESHOLDS =================
-const int AMMONIA_NORMAL   = 5000;
-const int AMMONIA_CRITICAL = 5500;
+// Lowered after hardware testing: sensor stable at 3000-3800 raw ADC
+// Note: MQ-137 needs 24-48h preheat for accurate gas readings
+const int AMMONIA_NORMAL   = 3600;  // was 5000 — warning level
+const int AMMONIA_CRITICAL = 3800;  // was 5500 — pump triggers
 
 // ================= STATES =================
 String pumpState      = "OFF";

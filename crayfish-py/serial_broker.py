@@ -204,7 +204,12 @@ def _close_serial():
     _esp32_serial = None
 
 
-def send_raw_command(command, expect_reply_lines=2, label="BROKER"):
+def send_raw_command(command, expect_reply_lines=1, label="BROKER"):
+    """
+    Send a command to the ESP32 and wait for up to expect_reply_lines replies.
+    Uses a short 3-second read timeout so a missed reply doesn't stall the
+    WaterMonitor thread and block telemetry reads or subsequent commands.
+    """
     command = str(command).strip()
     if not command:
         return False
@@ -215,7 +220,11 @@ def send_raw_command(command, expect_reply_lines=2, label="BROKER"):
             print(f"[{label}] Serial not available — skipping command: {command}")
             return False
 
+        # Temporarily lower timeout for command replies (3s instead of 15s)
+        # so a missed ACK doesn't block the lock for a long time.
+        original_timeout = ser.timeout
         try:
+            ser.timeout = 3
             ser.reset_input_buffer()
             ser.write((command + "\n").encode("utf-8"))
             ser.flush()
@@ -226,16 +235,24 @@ def send_raw_command(command, expect_reply_lines=2, label="BROKER"):
                 reply = ser.readline().decode("utf-8", errors="replace").strip()
                 if reply:
                     replies.append(reply)
-                if reply.startswith("DONE:") or reply.startswith("ERR:"):
+                if reply.startswith("DONE") or reply.startswith("ERR:"):
                     break
 
             if replies:
                 print(f"[{label}] Replies: {' | '.join(replies)}")
+            else:
+                print(f"[{label}] No reply received for: {command}")
             return True
         except Exception as exc:
             print(f"[{label}] Serial command failed: {exc}")
             _close_serial()
             return False
+        finally:
+            # Restore original timeout regardless of outcome
+            try:
+                ser.timeout = original_timeout
+            except Exception:
+                pass
 
 
 def read_water_telemetry(max_lines=12):
@@ -303,23 +320,35 @@ def esp32_ping():
 def send_esp32_move(steps=None, direction=None):
     steps = int(steps or ESP32_STEPS)
     direction = (direction or ESP32_DIRECTION).upper()
-    command = f"MOVE_{direction}"   # sends MOVE_CW or MOVE_CCW
-    return send_raw_command(command, expect_reply_lines=2, label="MOTOR")
+    # ESP32 firmware expects: MOVE {steps} {CW|CCW}
+    command = f"MOVE {steps} {direction}"
+    return send_raw_command(command, expect_reply_lines=1, label="MOTOR")
 
 
 def send_water_command(action, value=None):
-    # If already a raw ESP32 command string, send directly
+    # Raw ESP32 command strings — sent directly as-is
     raw_commands = {
         "UV_ON", "UV_OFF", "VALVE_ON", "VALVE_OFF",
-        "PELTIER_ON", "PELTIER_OFF", "PUMP_ON", "PUMP_OFF",
+        "COOL_MAX", "COOL_OFF",          # ESP32 uses COOL_MAX / COOL_OFF for Peltier
+        "PUMP_ON", "PUMP_OFF",
         "RESET_OVERRIDE", "RESET_PUMP", "RESET_UV",
         "RESET_PELTIER", "RESET_VALVE", "CIRC_PUMP_ON", "CIRC_PUMP_OFF"
     }
 
     action_str = str(action or "").strip()
 
-    if action_str.upper() in raw_commands:
-        return send_raw_command(action_str.upper(), expect_reply_lines=2, label="WATER")
+    # Remap Python-side names → ESP32 command names
+    remap = {
+        "PELTIER_ON":  "COOL_MAX",
+        "PELTIER_OFF": "COOL_OFF",
+    }
+    action_upper = action_str.upper()
+    if action_upper in remap:
+        action_str = remap[action_upper]
+        action_upper = action_str
+
+    if action_upper in raw_commands:
+        return send_raw_command(action_upper, expect_reply_lines=1, label="WATER")
 
     action_normalized = action_str.lower()
     value_text = str(value).strip().upper() if value is not None else ""
@@ -332,4 +361,4 @@ def send_water_command(action, value=None):
     else:
         command = f"{action_str.upper()} {value_text}".strip()
 
-    return send_raw_command(command, expect_reply_lines=2, label="WATER")
+    return send_raw_command(command, expect_reply_lines=1, label="WATER")
